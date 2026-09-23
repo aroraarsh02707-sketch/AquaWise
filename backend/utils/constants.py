@@ -1,0 +1,154 @@
+"""
+AquaWise Water-Use Assumptions.
+
+All values here are ESTIMATES based on commonly cited household and agricultural
+water-use data. They do NOT represent exact measurements for every situation.
+
+These constants are deliberately centralised so the development team can update
+them in one place if better reference data becomes available.  The application
+must never present these values to the user as scientifically exact figures —
+always use phrasing such as "estimated based on typical usage assumptions".
+
+Sources consulted for the initial values:
+  - World Health Organisation drinking-water guidelines
+  - Bureau of Indian Standards domestic water requirements
+  - Central Ground Water Board irrigation benchmarks (India)
+  - Generic plumbing flow-rate data (standard residential fittings)
+
+Assumptions are grouped by category and annotated with their unit and rationale.
+"""
+
+# ---------------------------------------------------------------------------
+# BATHING / SHOWER
+# ---------------------------------------------------------------------------
+
+# Litres discharged per minute through a typical shower head.
+# A standard residential shower head in India discharges roughly 8–12 L/min.
+# We use 9 L/min as a conservative mid-range estimate.
+SHOWER_FLOW_RATE_LPM = 9.0          # litres per minute
+
+# Average volume for a bucket bath (a common alternative to a shower).
+# A typical bucket holds 15–20 L; we use 18 L.
+BUCKET_BATH_VOLUME_L = 18.0         # litres per bath
+
+# ---------------------------------------------------------------------------
+# TOILET
+# ---------------------------------------------------------------------------
+
+# Volume used by a standard (single-flush) toilet per flush.
+# Most standard cisterns in Indian homes hold around 6 L.
+TOILET_FLUSH_STANDARD_L = 6.0       # litres per flush
+
+# Volume for a water-efficient dual-flush toilet (full flush).
+TOILET_FLUSH_EFFICIENT_L = 3.0      # litres per flush
+
+# Default used when toilet type is unknown.
+TOILET_FLUSH_DEFAULT_L = 6.0        # litres per flush
+
+# ---------------------------------------------------------------------------
+# LAUNDRY
+# ---------------------------------------------------------------------------
+
+# Water used per laundry load.
+# A front-loading washing machine uses ~45–55 L; a top-loader ~80–110 L.
+# We use 60 L as a reasonable blended average for Indian homes where both
+# types are common.
+LAUNDRY_WATER_PER_LOAD_L = 60.0     # litres per load
+
+# ---------------------------------------------------------------------------
+# KITCHEN / DISHWASHING
+# ---------------------------------------------------------------------------
+
+# Litres flowing from an open kitchen tap per minute.
+# Standard kitchen taps in India are typically 6–8 L/min.
+KITCHEN_TAP_FLOW_RATE_LPM = 6.0     # litres per minute
+
+# Water used by a dishwasher per cycle (where applicable).
+DISHWASHER_WATER_PER_CYCLE_L = 14.0 # litres per cycle
+
+# ---------------------------------------------------------------------------
+# VEHICLE WASHING
+# ---------------------------------------------------------------------------
+
+# Water used when washing a vehicle with a running garden hose.
+# A garden hose at typical pressure delivers ~15–20 L/min.
+# A 10-minute wash ~ 150–200 L.  We use 150 L.
+VEHICLE_WASH_HOSE_L = 150.0         # litres per wash (hose)
+
+# Water used when washing a vehicle using a bucket and cloth.
+# Two 15-L buckets is common practice; we use 30 L.
+VEHICLE_WASH_BUCKET_L = 30.0        # litres per wash (bucket)
+
+# Water used by a pressure washer vehicle wash.
+VEHICLE_WASH_PRESSURE_WASHER_L = 60.0  # litres per wash (pressure washer)
+
+# Default (when method is not specified).
+VEHICLE_WASH_DEFAULT_L = 100.0      # litres per wash (default/unknown method)
+
+# ---------------------------------------------------------------------------
+# GARDENING / WATERING
+# ---------------------------------------------------------------------------
+
+# Litres discharged per minute through a garden hose for outdoor watering.
+GARDENING_HOSE_FLOW_RATE_LPM = 15.0        # litres per minute
+GARDENING_SPRINKLER_FLOW_RATE_LPM = 12.0   # litres per minute
+GARDENING_DRIP_FLOW_RATE_LPM = 4.0         # litres per minute
+GARDENING_BUCKET_FLOW_RATE_LPM = 8.0       # litres per minute (effective rate)
+
+# Default when method is unspecified.
+GARDENING_DEFAULT_FLOW_RATE_LPM = 12.0     # litres per minute
+
+# ---------------------------------------------------------------------------
+# AGRICULTURAL IRRIGATION
+# ---------------------------------------------------------------------------
+
+# Conversion: 1 acre = 0.404686 hectares.
+ACRES_TO_HECTARES = 0.404686
+
+# Estimated water delivery rate in LITRES PER HECTARE PER HOUR for each
+# irrigation method.  These are mid-range values based on Central Ground Water
+# Board and FAO irrigation efficiency benchmarks for South Asia.
+#
+# Flood irrigation:    high volume, low efficiency (60–65 % field efficiency).
+#   Typical gross application: 3000–4500 L/hr/ha.  We use 3800.
+#
+# Drip irrigation:     very efficient (90 %+ field efficiency).
+#   Typical gross application: 400–900 L/hr/ha.  We use 650.
+#
+# Sprinkler irrigation: moderate efficiency (75–85 %).
+#   Typical gross application: 1200–1800 L/hr/ha.  We use 1500.
+#
+# Other / unknown:     we use a conservative mid-range estimate.
+IRRIGATION_RATE_L_PER_HA_PER_HOUR = {
+    "flood":      3800.0,
+    "drip":        650.0,
+    "sprinkler":  1500.0,
+    "other":      2000.0,
+}
+
+# Fallback rate when irrigation method is not matched.
+IRRIGATION_RATE_DEFAULT = 2000.0    # litres per hectare per hour
+
+# ---------------------------------------------------------------------------
+# BENCHMARK: DAILY PER-CAPITA WATER USE
+# ---------------------------------------------------------------------------
+
+# Average daily per-capita water use considered "typical" for an Indian
+# household (urban).  Used for scoring, not for display as a hard target.
+# Reference: CPHEEO (Central Public Health and Environmental Engineering
+# Organisation) recommends 135–150 L per capita per day for urban India.
+BENCHMARK_HOUSEHOLD_LPCD = 150.0    # litres per capita per day
+
+# A simple upper limit: above this per-capita consumption is flagged as high.
+HIGH_CONSUMPTION_THRESHOLD_LPCD = 200.0  # litres per capita per day
+
+# Percentage of total daily consumption above which a single category is
+# flagged as a major consumer and triggers a recommendation.
+HIGH_CATEGORY_SHARE_PERCENT = 30.0  # %
+
+# ---------------------------------------------------------------------------
+# WEEKLY / MONTHLY CONVERSION FACTORS
+# ---------------------------------------------------------------------------
+
+DAYS_IN_WEEK = 7
+DAYS_IN_MONTH = 30

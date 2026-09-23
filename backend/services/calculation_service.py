@@ -1,0 +1,303 @@
+"""
+AquaWise Water Consumption Calculation Engine.
+
+All calculations here are DETERMINISTIC and INDEPENDENT of any AI service.
+The AI layer (Phase 4) may later personalise the *language* of recommendations,
+but it must never alter the numerical results produced by this module.
+
+Calculations are based on the configurable assumptions in
+`backend/utils/constants.py`.  The application must communicate to users that
+results are *estimated* values, not direct meter readings.
+
+Public API
+----------
+calculate_household_consumption(data) -> dict
+    Accepts validated household assessment data and returns a result dict.
+
+calculate_farmer_consumption(data) -> dict
+    Accepts validated farmer assessment data and returns a result dict.
+
+Both functions return the same shape:
+    {
+        "daily_consumption":   float,   # litres/day
+        "weekly_consumption":  float,   # litres/week  (daily * 7)
+        "monthly_consumption": float,   # litres/month (daily * 30)
+        "breakdown": [                  # one entry per category
+            {"category": str, "litres_per_day": float, "percentage": float},
+            ...
+        ]
+    }
+"""
+
+from backend.utils.constants import (
+    # Shower
+    SHOWER_FLOW_RATE_LPM,
+    BUCKET_BATH_VOLUME_L,
+    # Toilet
+    TOILET_FLUSH_DEFAULT_L,
+    # Laundry
+    LAUNDRY_WATER_PER_LOAD_L,
+    # Kitchen
+    KITCHEN_TAP_FLOW_RATE_LPM,
+    # Vehicle
+    VEHICLE_WASH_HOSE_L,
+    VEHICLE_WASH_BUCKET_L,
+    VEHICLE_WASH_PRESSURE_WASHER_L,
+    VEHICLE_WASH_DEFAULT_L,
+    # Gardening
+    GARDENING_HOSE_FLOW_RATE_LPM,
+    GARDENING_SPRINKLER_FLOW_RATE_LPM,
+    GARDENING_DRIP_FLOW_RATE_LPM,
+    GARDENING_BUCKET_FLOW_RATE_LPM,
+    GARDENING_DEFAULT_FLOW_RATE_LPM,
+    # Irrigation
+    ACRES_TO_HECTARES,
+    IRRIGATION_RATE_L_PER_HA_PER_HOUR,
+    IRRIGATION_RATE_DEFAULT,
+    # Time constants
+    DAYS_IN_WEEK,
+    DAYS_IN_MONTH,
+)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+def _safe_float(value, default: float = 0.0) -> float:
+    """Convert a value to float, returning `default` if conversion fails."""
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_breakdown(category_litres: dict[str, float]) -> tuple[float, list[dict]]:
+    """
+    Given a dict of {category: litres_per_day}, calculate the total daily
+    consumption and construct the breakdown list with percentages.
+
+    Returns: (total_daily, breakdown_list)
+    """
+    total = sum(category_litres.values())
+
+    breakdown = []
+    for category, litres in category_litres.items():
+        if litres < 0:
+            litres = 0.0
+        pct = (litres / total * 100.0) if total > 0 else 0.0
+        breakdown.append({
+            "category": category,
+            "litres_per_day": round(litres, 2),
+            "percentage": round(pct, 1),
+        })
+
+    # Sort descending so the highest consumer is always first
+    breakdown.sort(key=lambda x: x["litres_per_day"], reverse=True)
+
+    return round(total, 2), breakdown
+
+
+def _to_weekly(daily: float) -> float:
+    return round(daily * DAYS_IN_WEEK, 2)
+
+
+def _to_monthly(daily: float) -> float:
+    return round(daily * DAYS_IN_MONTH, 2)
+
+
+def _result(daily: float, breakdown: list[dict]) -> dict:
+    """Package the final result in the standard shape expected by routes."""
+    return {
+        "daily_consumption": daily,
+        "weekly_consumption": _to_weekly(daily),
+        "monthly_consumption": _to_monthly(daily),
+        "breakdown": breakdown,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Household calculation
+# ---------------------------------------------------------------------------
+
+def calculate_household_consumption(data: dict) -> dict:
+    """
+    Estimate a household's daily water consumption from usage inputs.
+
+    Parameters
+    ----------
+    data : dict
+        Validated household assessment data with the following numeric fields.
+        All values must already be validated and should be float-compatible.
+
+        Field                       Unit          Converted to daily as
+        -----------------------     ----------    -----------------------------------
+        household_size              integer       multiplied into shower/toilet totals
+        showers_per_day             per day       already daily
+        shower_duration_minutes     minutes       × SHOWER_FLOW_RATE_LPM
+        toilet_uses_per_day         per day       × TOILET_FLUSH_DEFAULT_L
+        laundry_loads_per_week      per week      ÷ 7
+        kitchen_usage_minutes       minutes/day   × KITCHEN_TAP_FLOW_RATE_LPM
+        vehicle_washing_frequency   per week      ÷ 7
+        gardening_frequency         per week      ÷ 7
+        gardening_duration_minutes  minutes/sess  × flow_rate
+        other_usage_litres          litres/day    used directly
+
+    Notes
+    -----
+    - Showers and toilet usage are multiplied by household_size because the
+      inputs (showers_per_day, toilet_uses_per_day) are per-person values
+      that apply to every member of the household.
+    - Kitchen minutes is treated as total household daily usage, not per person.
+    - Laundry, vehicle, gardening are weekly activities converted to daily.
+    - If optional fields are absent (0 or None), they contribute 0 L/day.
+    """
+    size = max(1, int(_safe_float(data.get("household_size"), 1)))
+
+    # --- Bathing ---
+    showers_per_day          = _safe_float(data.get("showers_per_day"))
+    shower_duration_minutes  = _safe_float(data.get("shower_duration_minutes"))
+    bathing_litres_per_day   = showers_per_day * shower_duration_minutes * SHOWER_FLOW_RATE_LPM * size
+    # Assumption: each person takes `showers_per_day` showers of `shower_duration_minutes`
+
+    # --- Toilet ---
+    toilet_uses_per_day  = _safe_float(data.get("toilet_uses_per_day"))
+    toilet_litres_per_day = toilet_uses_per_day * TOILET_FLUSH_DEFAULT_L * size
+    # Assumption: `toilet_uses_per_day` flushes per person; multiplied by household size
+
+    # --- Laundry ---
+    laundry_loads_per_week = _safe_float(data.get("laundry_loads_per_week"))
+    laundry_litres_per_day = (laundry_loads_per_week * LAUNDRY_WATER_PER_LOAD_L) / DAYS_IN_WEEK
+    # Assumption: weekly loads divided by 7 to get daily equivalent
+
+    # --- Kitchen / Tap ---
+    kitchen_minutes_per_day = _safe_float(data.get("kitchen_usage_minutes"))
+    kitchen_litres_per_day  = kitchen_minutes_per_day * KITCHEN_TAP_FLOW_RATE_LPM
+    # Assumption: total household kitchen tap-on time per day
+
+    # --- Vehicle Washing ---
+    vehicle_freq_per_week   = _safe_float(data.get("vehicle_washing_frequency"))
+    vehicle_litres_per_day  = (vehicle_freq_per_week * VEHICLE_WASH_DEFAULT_L) / DAYS_IN_WEEK
+    # Assumption: washes per week at the default mixed-method volume ÷ 7
+
+    # --- Gardening ---
+    gardening_freq_per_week     = _safe_float(data.get("gardening_frequency"))
+    gardening_duration_minutes  = _safe_float(data.get("gardening_duration_minutes"))
+    gardening_litres_per_day    = (
+        gardening_freq_per_week * gardening_duration_minutes * GARDENING_DEFAULT_FLOW_RATE_LPM
+    ) / DAYS_IN_WEEK
+    # Assumption: sessions per week × minutes per session × default flow rate ÷ 7
+
+    # --- Other (direct estimate provided by user) ---
+    other_litres_per_day = _safe_float(data.get("other_usage_litres"))
+    # Assumption: user provides a direct litres-per-day estimate for any other activity
+
+    # --- Build breakdown and total ---
+    category_litres = {
+        "Bathing":        bathing_litres_per_day,
+        "Toilet":         toilet_litres_per_day,
+        "Laundry":        laundry_litres_per_day,
+        "Kitchen":        kitchen_litres_per_day,
+        "Vehicle Washing": vehicle_litres_per_day,
+        "Gardening":      gardening_litres_per_day,
+        "Other":          other_litres_per_day,
+    }
+
+    daily, breakdown = _build_breakdown(category_litres)
+    return _result(daily, breakdown)
+
+
+# ---------------------------------------------------------------------------
+# Farmer / Agricultural calculation
+# ---------------------------------------------------------------------------
+
+def calculate_farmer_consumption(data: dict) -> dict:
+    """
+    Estimate a farm's daily water consumption for irrigation.
+
+    Parameters
+    ----------
+    data : dict
+        Validated farmer assessment data.
+
+        Field                       Unit
+        -----------------------     ---------------
+        farm_area                   float (numeric)
+        farm_area_unit              'acre' or 'hectare'
+        irrigation_method           flood / drip / sprinkler / other
+        irrigation_frequency        sessions per week
+        irrigation_duration_minutes minutes per session
+        estimated_irrigation_litres litres per session (user-provided override)
+        rainwater_harvesting        bool — if True, subtract a 10 % credit
+
+    Strategy
+    --------
+    Priority 1 — User-provided estimate:
+        If `estimated_irrigation_litres > 0`, use that value directly as the
+        litres per irrigation session.  This is the most accurate because it
+        comes from the farmer's own observation.
+
+    Priority 2 — Model estimate from area + method + duration:
+        If no user estimate is provided, calculate:
+            litres_per_session = area_ha × (duration_h) × rate_L_ha_h
+        where `rate_L_ha_h` depends on the irrigation method (see constants.py).
+
+    Rainwater harvesting credit:
+        If the farmer reports using rainwater harvesting, we apply a 10 %
+        reduction to the total as a rough conservation credit.  This is
+        clearly an approximation and is documented accordingly.
+
+    Notes
+    -----
+    - Irrigation sessions are per week; divide by 7 for daily equivalent.
+    - If frequency or duration is 0, the calculated result will be 0 L/day.
+    """
+    farm_area           = _safe_float(data.get("farm_area"))
+    farm_area_unit      = (data.get("farm_area_unit") or "acre").strip().lower()
+    irrigation_method   = (data.get("irrigation_method") or "other").strip().lower()
+    freq_per_week       = _safe_float(data.get("irrigation_frequency"))
+    duration_minutes    = _safe_float(data.get("irrigation_duration_minutes"))
+    user_estimate_L     = _safe_float(data.get("estimated_irrigation_litres"))
+    rainwater_credit    = bool(data.get("rainwater_harvesting", False))
+
+    # Convert area to hectares
+    if farm_area_unit == "acre":
+        area_ha = farm_area * ACRES_TO_HECTARES
+    else:
+        area_ha = farm_area  # already in hectares
+
+    # Determine litres per irrigation session
+    if user_estimate_L > 0:
+        # Priority 1: use the farmer's own estimate
+        litres_per_session = user_estimate_L
+        source_note = "user-provided estimate"
+    else:
+        # Priority 2: model from area × duration × method rate
+        duration_hours = duration_minutes / 60.0
+        rate = IRRIGATION_RATE_L_PER_HA_PER_HOUR.get(irrigation_method, IRRIGATION_RATE_DEFAULT)
+        litres_per_session = area_ha * duration_hours * rate
+        source_note = f"estimated from area={farm_area} {farm_area_unit}, method={irrigation_method}"
+
+    # Daily irrigation equivalent (sessions per week ÷ 7)
+    irrigation_litres_per_day = (litres_per_session * freq_per_week) / DAYS_IN_WEEK
+
+    # Rainwater harvesting credit: 10 % reduction (conservative estimate)
+    if rainwater_credit and irrigation_litres_per_day > 0:
+        credit = irrigation_litres_per_day * 0.10
+        irrigation_litres_per_day -= credit
+        rainwater_adjusted = True
+    else:
+        rainwater_adjusted = False
+
+    category_litres = {
+        "Irrigation": max(0.0, irrigation_litres_per_day),
+    }
+
+    daily, breakdown = _build_breakdown(category_litres)
+
+    result = _result(daily, breakdown)
+    result["calculation_note"] = (
+        f"Irrigation estimate based on {source_note}."
+        + (" Rainwater harvesting credit (10%) applied." if rainwater_adjusted else "")
+    )
+    return result
