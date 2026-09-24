@@ -5,6 +5,7 @@ from flask_login import LoginManager
 from config import config
 from backend.models import db, User, Achievement
 from backend.routes.auth_routes import auth_bp
+from backend.routes.assessment_routes import assessment_bp
 
 login_manager = LoginManager()
 
@@ -111,6 +112,7 @@ def create_app(config_name=None):
 
     # Register Route Blueprints
     app.register_blueprint(auth_bp)
+    app.register_blueprint(assessment_bp)
 
     # CORS support for React development server
     @app.after_request
