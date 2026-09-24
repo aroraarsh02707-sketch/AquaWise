@@ -25,4 +25,18 @@ export const dashboardService = {
   getTrends: () => api.get('/dashboard/trends'),
 };
 
+// Assessment Services
+export const assessmentService = {
+  createAssessment: (data) => api.post('/assessments', data),
+  getAssessments: () => api.get('/assessments'),
+  getAssessment: (id) => api.get(`/assessments/${id}`),
+  deleteAssessment: (id) => api.delete(`/assessments/${id}`),
+};
+
+// Recommendation Services
+export const recommendationService = {
+  getRecommendations: (assessmentId, enhance = false) => 
+    api.get(`/assessments/${assessmentId}/recommendations?enhance=${enhance}`),
+};
+
 export default api;
