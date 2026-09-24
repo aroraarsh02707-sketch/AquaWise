@@ -39,4 +39,18 @@ export const recommendationService = {
     api.get(`/assessments/${assessmentId}/recommendations?enhance=${enhance}`),
 };
 
+// Assistant Services
+export const assistantService = {
+  chat: (message, conversationId = null) => api.post('/assistant/chat', { message, conversation_id: conversationId }),
+  getConversations: () => api.get('/assistant/conversations'),
+  getConversation: (id) => api.get(`/assistant/conversations/${id}`),
+};
+
+// Profile Services
+export const profileService = {
+  getProfile: () => api.get('/profile'),
+  updateProfile: (data) => api.put('/profile', data),
+  getAchievements: () => api.get('/profile/achievements'),
+};
+
 export default api;

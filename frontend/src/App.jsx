@@ -11,7 +11,8 @@ import Dashboard from './pages/Dashboard';
 import Assessment from './pages/Assessment';
 import Recommendations from './pages/Recommendations';
 import RecommendationsIndex from './pages/RecommendationsIndex';
-import { AssistantStub, ProfileStub } from './pages/Stubs';
+import Assistant from './pages/Assistant';
+import Profile from './pages/Profile';
 
 import './index.css';
 
@@ -31,8 +32,8 @@ function App() {
             <Route path="/assessment" element={<Assessment />} />
             <Route path="/recommendations" element={<RecommendationsIndex />} />
             <Route path="/recommendations/:id" element={<Recommendations />} />
-            <Route path="/assistant" element={<AssistantStub />} />
-            <Route path="/profile" element={<ProfileStub />} />
+            <Route path="/assistant" element={<Assistant />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
           
           {/* Catch-all */}
