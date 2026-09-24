@@ -3,10 +3,17 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { recommendationService } from '../services/api';
 import { motion } from 'framer-motion';
 
+const difficultyClass = (d) => {
+  if (!d) return 'tag-difficulty-easy';
+  const lc = d.toLowerCase();
+  if (lc === 'easy') return 'tag-difficulty-easy';
+  if (lc === 'medium') return 'tag-difficulty-medium';
+  return 'tag-difficulty-hard';
+};
+
 const Recommendations = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,10 +24,7 @@ const Recommendations = () => {
     if (enhance) setEnhancing(true);
     else setLoading(true);
     setError(null);
-
     try {
-      // If no ID is passed, this could be handled by navigating to the dashboard
-      // But we enforce an ID in the route definition for this page
       const response = await recommendationService.getRecommendations(id, enhance);
       if (response.data.success) {
         setData(response.data.data);
@@ -35,76 +39,50 @@ const Recommendations = () => {
   };
 
   useEffect(() => {
-    if (id) {
-      fetchRecommendations(false);
-    } else {
-      // Fallback if accessed without ID
-      navigate('/dashboard', { replace: true });
-    }
-  }, [id, navigate]);
+    if (id) fetchRecommendations(false);
+    else navigate('/dashboard', { replace: true });
+  }, [id]);
 
-  const handleEnhance = () => {
-    fetchRecommendations(true);
-  };
+  if (loading) return (
+    <div className="page-loader">
+      <div className="spinner" />
+      <p>Generating your action plan…</p>
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className="dashboard-loading">
-        <div className="spinner"></div>
-        <p>Generating personalized recommendations...</p>
+  if (error) return (
+    <div className="state-error">
+      <p>{error}</p>
+      <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <button onClick={() => fetchRecommendations(false)} className="btn-primary">Retry</button>
+        <Link to="/recommendations" className="btn-secondary">Back to History</Link>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="dashboard-error">
-        <p>{error}</p>
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-          <button onClick={() => fetchRecommendations(false)} className="btn-primary">Retry</button>
-          <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: 'none', padding: '0.75rem 1.5rem', background: '#e2e8f0', color: '#1e293b', borderRadius: '8px', fontWeight: '500' }}>Back to Dashboard</Link>
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 
   const recommendations = data?.recommendations || [];
 
   return (
-    <motion.div 
-      className="recommendations-page"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+    <motion.div className="recommendations-page"
+      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
     >
-      <header className="page-header" style={{ alignItems: 'flex-start' }}>
+      <header className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-            <Link to="/dashboard" style={{ color: 'var(--water-blue)', textDecoration: 'none', fontWeight: '500' }}>← Dashboard</Link>
-          </div>
+          <Link to="/recommendations" style={{ fontSize: '0.825rem', color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem' }}>
+            ← Back to History
+          </Link>
           <h2>Your Action Plan</h2>
           <p className="subtitle">
-            Based on your recent assessment, here are steps you can take to save water.
+            {recommendations.length} personalised recommendation{recommendations.length !== 1 ? 's' : ''} based on your assessment.
+            {isEnhanced && <span style={{ color: 'var(--teal-600)', fontWeight: 600 }}> ✨ AI-enhanced</span>}
           </p>
         </div>
-        
+
         {!isEnhanced && recommendations.length > 0 && (
-          <button 
-            onClick={handleEnhance} 
-            disabled={enhancing}
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            {enhancing ? (
-              <>
-                <span className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></span>
-                Enhancing with AI...
-              </>
-            ) : (
-              <>
-                <span>✨</span> Enhance with AI
-              </>
-            )}
+          <button onClick={() => fetchRecommendations(true)} disabled={enhancing} className="btn-primary">
+            {enhancing
+              ? <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Enhancing…</>
+              : '✨ Enhance with AI'}
           </button>
         )}
       </header>
@@ -113,42 +91,34 @@ const Recommendations = () => {
         <div className="empty-state">
           <div className="empty-icon">✅</div>
           <h3>Great Job!</h3>
-          <p>We don't have any specific recommendations right now. Keep up your efficient water usage!</p>
-          <Link to="/dashboard" className="btn-primary">Return to Dashboard</Link>
+          <p>Your water usage is already efficient — no specific recommendations at this time. Keep it up!</p>
+          <Link to="/dashboard" className="btn-primary">Back to Dashboard</Link>
         </div>
       ) : (
-        <div className="recs-grid" style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: '1fr' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.125rem' }}>
           {recommendations.map((rec, index) => (
-            <motion.div 
-              key={index}
-              className="metric-card"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              style={{ borderLeft: '4px solid var(--water-blue)' }}
+            <motion.div key={index} className="rec-full-card"
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.07 }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+              <div className="rec-header">
                 <div>
-                  <h3 style={{ fontSize: '1.25rem', color: 'var(--text-color)', marginBottom: '0.5rem' }}>{rec.title}</h3>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>
-                      {rec.category}
-                    </span>
+                  <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{rec.title}</h3>
+                  <div className="rec-tags">
+                    <span className={`tag tag-category`}>{rec.category}</span>
                     {rec.difficulty && (
-                      <span style={{ fontSize: '0.75rem', background: '#f0fdf4', color: 'var(--conservation-green)', padding: '0.25rem 0.5rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>
-                        {rec.difficulty}
-                      </span>
+                      <span className={`tag ${difficultyClass(rec.difficulty)}`}>{rec.difficulty}</span>
                     )}
                   </div>
                 </div>
                 {rec.potential_saving > 0 && (
-                  <div style={{ textAlign: 'right', background: '#e0f2fe', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--water-blue)', fontWeight: '600', textTransform: 'uppercase' }}>Save up to</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--water-blue)' }}>{rec.potential_saving} <span style={{ fontSize: '1rem', fontWeight: '500' }}>L/day</span></div>
+                  <div className="rec-saving-badge">
+                    <span className="save-label">Save up to</span>
+                    <span className="save-value">{rec.potential_saving}</span>
+                    <span className="save-unit">litres/day</span>
                   </div>
                 )}
               </div>
-              <p style={{ color: '#475569', lineHeight: '1.6', fontSize: '1rem' }}>{rec.description}</p>
+              <p className="rec-description">{rec.description}</p>
             </motion.div>
           ))}
         </div>

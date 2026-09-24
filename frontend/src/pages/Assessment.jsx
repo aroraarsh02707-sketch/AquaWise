@@ -4,56 +4,76 @@ import { useAuth } from '../context/AuthContext';
 import { assessmentService } from '../services/api';
 import { motion } from 'framer-motion';
 
+const HOUSEHOLD_GROUPS = [
+  {
+    label: 'Household',
+    hint: 'How many people share this water supply?',
+    fields: [
+      { name: 'household_size', label: 'Number of People', type: 'number', min: 1, max: 50, step: 1, required: true },
+    ],
+  },
+  {
+    label: 'Daily Indoor Usage',
+    hint: 'Estimate daily activities for the whole household.',
+    fields: [
+      { name: 'showers_per_day', label: 'Total Showers per Day', type: 'number', min: 0, max: 20, step: 1, required: true },
+      { name: 'shower_duration_minutes', label: 'Avg. Shower Duration (minutes)', type: 'number', min: 0, max: 60, required: true },
+      { name: 'toilet_uses_per_day', label: 'Total Toilet Flushes per Day', type: 'number', min: 0, max: 60, step: 1, required: true },
+      { name: 'kitchen_usage_minutes', label: 'Kitchen Tap Usage (minutes/day)', type: 'number', min: 0, max: 180, required: true },
+      { name: 'laundry_loads_per_week', label: 'Laundry Loads per Week', type: 'number', min: 0, max: 30, step: 1, required: true },
+    ],
+  },
+  {
+    label: 'Outdoor & Other',
+    hint: 'Leave as 0 if not applicable.',
+    fields: [
+      { name: 'gardening_frequency', label: 'Gardening Sessions per Week', type: 'number', min: 0, max: 14, step: 1 },
+      { name: 'gardening_duration_minutes', label: 'Gardening Duration (minutes/session)', type: 'number', min: 0, max: 240 },
+      { name: 'vehicle_washing_frequency', label: 'Vehicle Washes per Week', type: 'number', min: 0, max: 14, step: 1 },
+      { name: 'other_usage_litres', label: 'Other Usage (litres/day)', type: 'number', min: 0, max: 1000 },
+    ],
+  },
+];
+
+const FARMER_GROUPS = [
+  {
+    label: 'Farm Details',
+    hint: null,
+    fields: [
+      { name: 'farm_area', label: 'Farm Area', type: 'number', min: 0.001, max: 10000, step: 'any', required: true },
+      { name: 'farm_area_unit', label: 'Area Unit', type: 'select', options: [{ value: 'acre', label: 'Acres' }, { value: 'hectare', label: 'Hectares' }], required: true },
+      { name: 'crop_type', label: 'Crop Type', type: 'text', maxLength: 100, required: true },
+    ],
+  },
+  {
+    label: 'Irrigation',
+    hint: null,
+    fields: [
+      { name: 'irrigation_method', label: 'Irrigation Method', type: 'select', options: [{ value: 'flood', label: 'Flood' }, { value: 'drip', label: 'Drip' }, { value: 'sprinkler', label: 'Sprinkler' }, { value: 'other', label: 'Other' }], required: true },
+      { name: 'water_source', label: 'Water Source', type: 'select', options: [{ value: 'groundwater', label: 'Groundwater' }, { value: 'canal', label: 'Canal' }, { value: 'rainwater', label: 'Rainwater' }, { value: 'tank', label: 'Tank' }, { value: 'other', label: 'Other' }] },
+      { name: 'irrigation_frequency', label: 'Sessions per Week', type: 'number', min: 0, max: 30, step: 1 },
+      { name: 'irrigation_duration_minutes', label: 'Duration per Session (minutes)', type: 'number', min: 0, max: 1440 },
+      { name: 'estimated_irrigation_litres', label: 'Est. Volume per Day (litres, optional override)', type: 'number', min: 0, max: 1000000 },
+    ],
+  },
+];
+
 const Assessment = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+  const isHousehold = user?.user_type === 'household';
+
+  const initState = isHousehold
+    ? { assessment_type: 'household', household_size: 1, showers_per_day: 1, shower_duration_minutes: 5, toilet_uses_per_day: 4, laundry_loads_per_week: 2, kitchen_usage_minutes: 15, vehicle_washing_frequency: 0, gardening_frequency: 0, gardening_duration_minutes: 0, other_usage_litres: 0 }
+    : { assessment_type: 'farmer', farm_area: 1, farm_area_unit: 'acre', crop_type: '', irrigation_method: 'drip', water_source: 'groundwater', irrigation_frequency: 1, irrigation_duration_minutes: 60, estimated_irrigation_litres: 0 };
+
+  const [formData, setFormData] = useState(initState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  
-  // Initialize form based on user type
-  const isHousehold = user?.user_type === 'household';
-  
-  const initialHouseholdState = {
-    assessment_type: 'household',
-    household_size: 1,
-    showers_per_day: 1,
-    shower_duration_minutes: 5,
-    toilet_uses_per_day: 4,
-    laundry_loads_per_week: 2,
-    kitchen_usage_minutes: 15,
-    vehicle_washing_frequency: 0,
-    gardening_frequency: 0,
-    gardening_duration_minutes: 0,
-    other_usage_litres: 0,
-  };
-  
-  const initialFarmerState = {
-    assessment_type: 'farmer',
-    farm_area: 1,
-    farm_area_unit: 'acre',
-    crop_type: '',
-    irrigation_method: 'drip',
-    water_source: 'groundwater',
-    irrigation_frequency: 1,
-    irrigation_duration_minutes: 60,
-    estimated_irrigation_litres: 0,
-  };
-
-  const [formData, setFormData] = useState(isHousehold ? initialHouseholdState : initialFarmerState);
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
-    let parsedValue = value;
-    
-    if (type === 'number') {
-      parsedValue = value === '' ? '' : Number(value);
-    }
-    
-    setFormData(prev => ({
-      ...prev,
-      [name]: parsedValue
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value }));
     setError(null);
   };
 
@@ -61,19 +81,15 @@ const Assessment = () => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
-    
     try {
       const response = await assessmentService.createAssessment(formData);
       if (response.data.success) {
-        const newAssessmentId = response.data.data.id;
-        navigate(`/recommendations/${newAssessmentId}`);
+        navigate(`/recommendations/${response.data.data.id}`);
       }
     } catch (err) {
       if (err.response?.data?.error?.details) {
-        // Validation errors returned as an object { field: "message" }
         const details = err.response.data.error.details;
-        const firstError = Object.values(details)[0];
-        setError(firstError || 'Validation failed. Please check your inputs.');
+        setError(Object.values(details)[0] || 'Validation failed. Please check your inputs.');
       } else {
         setError(err.response?.data?.error?.message || 'Failed to submit assessment. Please try again.');
       }
@@ -82,163 +98,65 @@ const Assessment = () => {
     }
   };
 
+  const groups = isHousehold ? HOUSEHOLD_GROUPS : FARMER_GROUPS;
+
   return (
-    <motion.div 
-      className="assessment-page"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+    <motion.div className="assessment-page"
+      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
     >
       <header className="page-header">
         <div>
           <h2>Water Usage Assessment</h2>
-          <p className="subtitle">
-            Fill out the details below so we can calculate your Water Saver Score and provide personalized recommendations.
-          </p>
+          <p className="subtitle">Fill in your water habits so we can calculate your score and recommendations.</p>
         </div>
       </header>
 
       <div className="assessment-container">
-        {error && <div className="auth-error">{error}</div>}
+        <div className="assessment-type-notice">
+          <span>📋</span>
+          <span>Completing a <strong>{isHousehold ? 'Household' : 'Farmer'}</strong> assessment. To change your type, update it in your Profile.</span>
+        </div>
 
-        <form onSubmit={handleSubmit} className="assessment-form">
-          {isHousehold ? (
-            <>
-              <h3 className="section-title">Household Information</h3>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="household_size">Household Size (People)</label>
-                  <input type="number" id="household_size" name="household_size" min="1" max="50" required
-                    value={formData.household_size} onChange={handleChange} disabled={isSubmitting} />
+        <div className="assessment-body">
+          {error && <div className="auth-error" style={{ marginBottom: '1.5rem' }}>{error}</div>}
+
+          <form onSubmit={handleSubmit} noValidate>
+            {groups.map((group, gi) => (
+              <div key={gi} className="section-group">
+                <div className="section-group-label">{group.label}</div>
+                {group.hint && <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '1rem', marginTop: '-0.5rem' }}>{group.hint}</p>}
+                <div className="form-grid">
+                  {group.fields.map((field) => (
+                    <div className="form-group" key={field.name}>
+                      <label htmlFor={field.name}>{field.label}</label>
+                      {field.type === 'select' ? (
+                        <select id={field.name} name={field.name} value={formData[field.name] || ''} onChange={handleChange} disabled={isSubmitting} required={field.required}>
+                          {field.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      ) : field.type === 'text' ? (
+                        <input type="text" id={field.name} name={field.name} maxLength={field.maxLength} required={field.required}
+                          value={formData[field.name] || ''} onChange={handleChange} disabled={isSubmitting} />
+                      ) : (
+                        <input type="number" id={field.name} name={field.name}
+                          min={field.min} max={field.max} step={field.step ?? 'any'} required={field.required}
+                          value={formData[field.name] ?? 0} onChange={handleChange} disabled={isSubmitting} />
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
+            ))}
 
-              <h3 className="section-title">Indoor Usage</h3>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="showers_per_day">Showers per day (total)</label>
-                  <input type="number" id="showers_per_day" name="showers_per_day" min="0" max="20" step="1" required
-                    value={formData.showers_per_day} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="shower_duration_minutes">Avg. Shower Duration (minutes)</label>
-                  <input type="number" id="shower_duration_minutes" name="shower_duration_minutes" min="0" max="60" required
-                    value={formData.shower_duration_minutes} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="toilet_uses_per_day">Toilet Flushes per day (total)</label>
-                  <input type="number" id="toilet_uses_per_day" name="toilet_uses_per_day" min="0" max="60" step="1" required
-                    value={formData.toilet_uses_per_day} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="kitchen_usage_minutes">Kitchen Tap Usage (minutes/day)</label>
-                  <input type="number" id="kitchen_usage_minutes" name="kitchen_usage_minutes" min="0" max="180" required
-                    value={formData.kitchen_usage_minutes} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="laundry_loads_per_week">Laundry Loads per week</label>
-                  <input type="number" id="laundry_loads_per_week" name="laundry_loads_per_week" min="0" max="30" step="1" required
-                    value={formData.laundry_loads_per_week} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-              </div>
-
-              <h3 className="section-title">Outdoor & Other Usage</h3>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="gardening_frequency">Gardening Sessions per week</label>
-                  <input type="number" id="gardening_frequency" name="gardening_frequency" min="0" max="14" step="1"
-                    value={formData.gardening_frequency} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="gardening_duration_minutes">Gardening Duration (minutes)</label>
-                  <input type="number" id="gardening_duration_minutes" name="gardening_duration_minutes" min="0" max="240"
-                    value={formData.gardening_duration_minutes} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="vehicle_washing_frequency">Vehicle Wash per week</label>
-                  <input type="number" id="vehicle_washing_frequency" name="vehicle_washing_frequency" min="0" max="14" step="1"
-                    value={formData.vehicle_washing_frequency} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="other_usage_litres">Other Usage (litres/day)</label>
-                  <input type="number" id="other_usage_litres" name="other_usage_litres" min="0" max="1000"
-                    value={formData.other_usage_litres} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="section-title">Farm Details</h3>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="farm_area">Farm Area</label>
-                  <input type="number" id="farm_area" name="farm_area" min="0.001" max="10000" step="any" required
-                    value={formData.farm_area} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="farm_area_unit">Area Unit</label>
-                  <select id="farm_area_unit" name="farm_area_unit" required value={formData.farm_area_unit} onChange={handleChange} disabled={isSubmitting}>
-                    <option value="acre">Acres</option>
-                    <option value="hectare">Hectares</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="crop_type">Crop Type</label>
-                  <input type="text" id="crop_type" name="crop_type" maxLength="100" required
-                    value={formData.crop_type} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-              </div>
-
-              <h3 className="section-title">Irrigation Details</h3>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="irrigation_method">Irrigation Method</label>
-                  <select id="irrigation_method" name="irrigation_method" required value={formData.irrigation_method} onChange={handleChange} disabled={isSubmitting}>
-                    <option value="flood">Flood</option>
-                    <option value="drip">Drip</option>
-                    <option value="sprinkler">Sprinkler</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="water_source">Water Source</label>
-                  <select id="water_source" name="water_source" required value={formData.water_source} onChange={handleChange} disabled={isSubmitting}>
-                    <option value="groundwater">Groundwater</option>
-                    <option value="canal">Canal</option>
-                    <option value="rainwater">Rainwater</option>
-                    <option value="tank">Tank</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="irrigation_frequency">Irrigation Sessions per week</label>
-                  <input type="number" id="irrigation_frequency" name="irrigation_frequency" min="0" max="30" step="1"
-                    value={formData.irrigation_frequency} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="irrigation_duration_minutes">Irrigation Duration (minutes)</label>
-                  <input type="number" id="irrigation_duration_minutes" name="irrigation_duration_minutes" min="0" max="1440"
-                    value={formData.irrigation_duration_minutes} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="estimated_irrigation_litres">Estimated Irrigation Volume (litres/day - optional override)</label>
-                  <input type="number" id="estimated_irrigation_litres" name="estimated_irrigation_litres" min="0" max="1000000"
-                    value={formData.estimated_irrigation_litres} onChange={handleChange} disabled={isSubmitting} />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="form-actions">
-            <button 
-              type="submit" 
-              className="btn-primary auth-submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Calculating...' : 'Submit Assessment'}
-            </button>
-          </div>
-        </form>
+            <div className="form-actions">
+              <button type="submit" className="btn-primary" disabled={isSubmitting}
+                style={{ padding: '0.8rem 2rem', fontSize: '1rem' }}>
+                {isSubmitting
+                  ? <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2, marginRight: '0.5rem' }} />Calculating…</>
+                  : 'Submit Assessment →'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </motion.div>
   );
