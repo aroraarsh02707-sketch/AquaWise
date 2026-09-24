@@ -1,8 +1,12 @@
 import os
 from datetime import datetime, timezone
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
+from flask_login import LoginManager
 from config import config
-from backend.models import db, Achievement
+from backend.models import db, User, Achievement
+from backend.routes.auth_routes import auth_bp
+
+login_manager = LoginManager()
 
 def seed_achievements():
     """Seed the default achievement milestones into the database."""
@@ -87,6 +91,37 @@ def create_app(config_name=None):
 
     # Initialize SQLAlchemy database with application
     db.init_app(app)
+
+    # Initialize Flask-Login for session-based user authentication
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return db.session.get(User, int(user_id))
+
+    @login_manager.unauthorized_handler
+    def unauthorized_callback():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "UNAUTHORIZED",
+                "message": "Authentication required. Please log in."
+            }
+        }), 401
+
+    # Register Route Blueprints
+    app.register_blueprint(auth_bp)
+
+    # CORS support for React development server
+    @app.after_request
+    def set_cors_headers(response):
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        return response
 
     # Register custom CLI commands
     @app.cli.command("init-db")
