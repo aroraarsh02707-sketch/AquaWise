@@ -19,4 +19,10 @@ export const authService = {
   getCurrentUser: () => api.get('/auth/me'),
 };
 
+// Dashboard Services
+export const dashboardService = {
+  getDashboard: () => api.get('/dashboard'),
+  getTrends: () => api.get('/dashboard/trends'),
+};
+
 export default api;
