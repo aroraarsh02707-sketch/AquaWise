@@ -7,6 +7,9 @@ from backend.models import db, User, Achievement
 from backend.routes.auth_routes import auth_bp
 from backend.routes.assessment_routes import assessment_bp
 from backend.routes.recommendation_routes import recommendation_bp
+from backend.routes.dashboard_routes import dashboard_bp
+from backend.routes.assistant_routes import assistant_bp
+from backend.routes.profile_routes import profile_bp
 
 login_manager = LoginManager()
 
@@ -115,6 +118,9 @@ def create_app(config_name=None):
     app.register_blueprint(auth_bp)
     app.register_blueprint(assessment_bp)
     app.register_blueprint(recommendation_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(assistant_bp)
+    app.register_blueprint(profile_bp)
 
     # CORS support for React development server
     @app.after_request
