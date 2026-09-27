@@ -118,7 +118,7 @@ const Dashboard = () => {
       <section className="dashboard-state-card dashboard-error-state" role="alert">
         <span className="dashboard-state-icon"><Icon name="water" size={23} /></span>
         <div>
-          <h2>Your overview is temporarily unavailable</h2>
+          <h1>Your overview is temporarily unavailable</h1>
           <p>{error}</p>
         </div>
         <button type="button" onClick={retryDashboardData} className="btn-primary">Try again</button>
@@ -136,7 +136,7 @@ const Dashboard = () => {
       <header className="page-header dashboard-page-header">
         <div>
           <p className="dashboard-eyebrow">YOUR WATER AT A GLANCE</p>
-          <h2>Good to see you, {firstName}</h2>
+          <h1>Good to see you, {firstName}</h1>
           <p className="subtitle">A clear view of your water use and the steps that can reduce it.</p>
         </div>
         <Link to="/assessment" className="btn-primary dashboard-assessment-cta">

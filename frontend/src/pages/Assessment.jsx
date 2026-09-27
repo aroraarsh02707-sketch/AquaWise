@@ -248,7 +248,7 @@ const Assessment = () => {
       <header className="page-header assessment-page-header">
         <div>
           <p className="assessment-eyebrow">WATER USE CHECK-IN</p>
-          <h2>Water usage assessment</h2>
+          <h1>Water usage assessment</h1>
           <p className="subtitle">A few details help us build a useful picture of your {isHousehold ? 'household' : 'farm'} water use.</p>
         </div>
         <Link to="/dashboard" className="assessment-cancel-link">Back to overview</Link>

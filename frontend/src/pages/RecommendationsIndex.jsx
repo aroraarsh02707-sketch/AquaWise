@@ -74,7 +74,7 @@ const RecommendationsIndex = () => {
       <section className="recommendation-state-card" role="alert">
         <span className="recommendation-state-icon"><Icon name="warning" size={22} /></span>
         <div>
-          <h2>We couldn’t load your action plans</h2>
+          <h1>We couldn’t load your action plans</h1>
           <p>Your assessment history is still safe. Try loading it again.</p>
         </div>
         <button type="button" onClick={retry} className="btn-primary">Try again</button>
@@ -87,7 +87,7 @@ const RecommendationsIndex = () => {
       <header className="page-header recommendations-page-header">
         <div>
           <p className="recommendations-eyebrow">YOUR CONSERVATION PLAN</p>
-          <h2>Action plans</h2>
+          <h1>Action plans</h1>
           <p className="subtitle">Open an assessment to review the practical water-saving actions created from it.</p>
         </div>
         <Link to="/assessment" className="btn-primary recommendations-new-assessment">

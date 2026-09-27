@@ -198,7 +198,7 @@ const Recommendations = () => {
       <section className="recommendation-state-card recommendation-error-state" role="alert">
         <span className="recommendation-state-icon"><Icon name="warning" size={22} /></span>
         <div>
-          <h2>This action plan isn’t available</h2>
+          <h1>This action plan isn’t available</h1>
           <p>It may have been removed or temporarily unavailable. You can retry or choose another assessment.</p>
         </div>
         <button type="button" onClick={retry} className="btn-primary">Try again</button>
@@ -217,7 +217,7 @@ const Recommendations = () => {
         <div>
           <Link to="/recommendations" className="recommendation-back-link"><Icon name="arrowLeft" size={16} /> All action plans</Link>
           <p className="recommendations-eyebrow">ASSESSMENT ACTION PLAN</p>
-          <h2>Recommended actions</h2>
+          <h1>Recommended actions</h1>
           <p className="subtitle">Practical changes based on your assessment. Start with the actions that matter most to your water use.</p>
         </div>
         <span className="recommendation-count">{plan.count ?? recommendations.length} {recommendations.length === 1 ? 'action' : 'actions'}</span>
