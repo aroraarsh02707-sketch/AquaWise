@@ -14,6 +14,8 @@ const paths = {
   score: <><circle cx="12" cy="9" r="6" /><path d="m9 14-1 7 4-2 4 2-1-7M12 6.5l.8 1.6 1.7.2-1.2 1.2.3 1.7-1.6-.8-1.5.8.3-1.7-1.3-1.2 1.7-.2.8-1.6Z" /></>,
   trend: <><path d="m4 16 5-5 4 3 7-8" /><path d="M14 6h6v6" /></>,
   arrowRight: <><path d="M4 12h15M13 6l6 6-6 6" /></>,
+  arrowLeft: <><path d="M20 12H5M11 18l-6-6 6-6" /></>,
+  warning: <><path d="M10.3 4.5 2.9 17.2a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.5a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></>,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 1.8, className = '' }) {
