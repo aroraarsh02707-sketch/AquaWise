@@ -1,13 +1,1 @@
-.app-container {
-  font-family: Arial, sans-serif;
-  text-align: center;
-  padding: 2rem;
-}
-
-header {
-  background-color: #0077b6;
-  color: white;
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
-}
+/* App-specific styles belong in index.css or in scoped component stylesheets. */
