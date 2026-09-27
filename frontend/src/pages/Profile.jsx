@@ -1,209 +1,170 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { profileService } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import Icon from '../components/Icon';
 
-const AchievementCard = ({ achievement }) => {
-  const { unlocked, name, description, badge_icon, earned_at } = achievement;
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }).format(date);
+}
+
+function LoadingState({ label }) {
+  return <div className="profile-loading-state" role="status"><span className="spinner" /><span>{label}</span></div>;
+}
+
+function AchievementCard({ achievement, index }) {
+  const unlocked = achievement.unlocked === true;
   return (
-    <div className={`achievement-card ${unlocked ? 'unlocked' : 'locked'}`}>
-      <div className="achievement-icon">{badge_icon || '🏅'}</div>
+    <motion.article className={`achievement-card ${unlocked ? 'unlocked' : 'locked'}`} initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: Math.min(index * 0.035, 0.21) }}>
+      <span className={`achievement-icon ${unlocked ? 'earned' : ''}`} aria-hidden="true"><Icon name={unlocked ? 'score' : 'water'} size={21} /></span>
       <div className="achievement-body">
-        <h4>{name}</h4>
-        <p>{description}</p>
-        {unlocked && earned_at && (
-          <span className="achievement-date">Earned {new Date(earned_at).toLocaleDateString()}</span>
-        )}
+        <h3>{achievement.name || 'Achievement'}</h3>
+        {achievement.description && <p>{achievement.description}</p>}
+        {unlocked && achievement.earned_at && <time className="achievement-date" dateTime={achievement.earned_at}>Earned {formatDate(achievement.earned_at)}</time>}
       </div>
-      <span className={`achievement-badge ${unlocked ? 'unlocked-badge' : 'locked-badge'}`}>
-        {unlocked ? '✓ Unlocked' : 'Locked'}
+      <span className={`achievement-status ${unlocked ? 'unlocked-badge' : 'locked-badge'}`}>
+        <span className="achievement-status-mark" aria-hidden="true">{unlocked ? '✓' : '○'}</span>{unlocked ? 'Completed' : 'Not yet earned'}
       </span>
-    </div>
+    </motion.article>
   );
-};
+}
 
-const Profile = () => {
-  const { user: authUser } = useAuth();
+function Profile() {
   const [profile, setProfile] = useState(null);
   const [achievements, setAchievements] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [achievementsLoading, setAchievementsLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
+  const [achievementsError, setAchievementsError] = useState('');
   const [formName, setFormName] = useState('');
   const [formUserType, setFormUserType] = useState('household');
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
+  const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const saveLock = useRef(false);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [profileRes, achRes] = await Promise.all([
-          profileService.getProfile(),
-          profileService.getAchievements(),
-        ]);
-        if (profileRes.data.success) {
-          const p = profileRes.data.data.profile;
-          setProfile(p);
-          setFormName(p.name || '');
-          setFormUserType(p.user_type || 'household');
-        }
-        if (achRes.data.success) setAchievements(achRes.data.data.achievements);
-      } catch {
-        setError('Failed to load profile. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
+  const loadProfile = useCallback(async () => {
+    setProfileLoading(true);
+    setProfileError('');
+    try {
+      const response = await profileService.getProfile();
+      const data = response?.data?.data?.profile;
+      if (!response?.data?.success || !data) throw new Error('Profile is unavailable.');
+      setProfile(data);
+      setFormName(data.name || '');
+      setFormUserType(data.user_type === 'farmer' ? 'farmer' : 'household');
+    } catch {
+      setProfileError('Your profile could not be loaded. Please try again.');
+    } finally {
+      setProfileLoading(false);
+    }
   }, []);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setSaveError(null);
+  const loadAchievements = useCallback(async () => {
+    setAchievementsLoading(true);
+    setAchievementsError('');
+    try {
+      const response = await profileService.getAchievements();
+      const data = response?.data?.data?.achievements;
+      if (!response?.data?.success || !Array.isArray(data)) throw new Error('Achievements are unavailable.');
+      setAchievements(data.filter((item) => item && typeof item === 'object'));
+    } catch {
+      setAchievementsError('Achievements could not be loaded. Your profile information is still available.');
+    } finally {
+      setAchievementsLoading(false);
+    }
+  }, []);
+
+  // Load profile and achievements independently so one failed request does not hide the other.
+  // eslint-disable-next-line react/set-state-in-effect
+  useEffect(() => { void loadProfile(); void loadAchievements(); }, [loadProfile, loadAchievements]);
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    if (saveLock.current || !profile) return;
+    saveLock.current = true;
+    setSaveError('');
     setSaveSuccess(false);
     setSaving(true);
     try {
-      const res = await profileService.updateProfile({ name: formName, user_type: formUserType });
-      if (res.data.success) {
-        setProfile(prev => ({ ...prev, ...res.data.data.profile }));
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3500);
-      }
-    } catch (err) {
-      if (err.response?.data?.error?.details) {
-        setSaveError(Object.values(err.response.data.error.details)[0] || 'Validation failed.');
-      } else {
-        setSaveError(err.response?.data?.error?.message || 'Failed to save. Please try again.');
-      }
+      const response = await profileService.updateProfile({ name: formName, user_type: formUserType });
+      if (!response?.data?.success || !response.data.data?.profile) throw new Error('Profile could not be saved.');
+      const updatedProfile = response.data.data.profile;
+      setProfile((previous) => ({ ...previous, ...updatedProfile }));
+      setFormName(updatedProfile.name || formName);
+      setFormUserType(updatedProfile.user_type === 'farmer' ? 'farmer' : 'household');
+      setSaveSuccess(true);
+    } catch (error) {
+      const details = error.response?.data?.error?.details;
+      setSaveError((details && Object.values(details)[0]) || error.response?.data?.error?.message || 'Your changes could not be saved. Please try again.');
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   };
 
-  if (loading) return (
-    <div className="page-loader">
-      <div className="spinner" />
-      <p>Loading your profile…</p>
-    </div>
-  );
-
-  if (error) return (
-    <div className="state-error">
-      <p>{error}</p>
-      <button onClick={() => window.location.reload()} className="btn-primary">Retry</button>
-    </div>
-  );
-
-  const streak = profile?.streak || {};
-  const badges = profile?.badges || [];
-  const unlockedCount = achievements.filter(a => a.unlocked).length;
+  const badges = Array.isArray(profile?.badges) ? profile.badges : [];
+  const unlockedCount = achievements.filter((item) => item?.unlocked === true).length;
+  const initials = (profile?.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const accountType = profile?.user_type === 'farmer' ? 'Farmer' : 'Household';
 
   return (
-    <motion.div className="profile-page"
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-    >
-      <header className="page-header" style={{ marginBottom: '2rem' }}>
-        <div>
-          <h2>My Profile</h2>
-          <p className="subtitle">Manage your account and track your conservation achievements.</p>
-        </div>
+    <motion.main className="profile-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+      <header className="page-header profile-page-header">
+        <div><span className="profile-eyebrow">YOUR AQUAWISE ACCOUNT</span><h1>Profile & progress</h1><p className="subtitle">Manage your details and see how your conservation practice is growing.</p></div>
       </header>
 
-      <div className="profile-grid">
-        {/* ── Left Column ── */}
-        <div>
-          {/* Profile Card Header */}
-          <div className="profile-card">
-            <div className="profile-card-header">
-              <div className="profile-avatar">{profile?.name?.charAt(0).toUpperCase()}</div>
-              <p className="profile-name">{profile?.name}</p>
-              <p className="profile-email">{profile?.email}</p>
-            </div>
+      <section className="profile-identity" aria-labelledby="profile-identity-heading">
+        {profileLoading ? <LoadingState label="Loading your profile…" /> : profileError ? (
+          <div className="profile-inline-error" role="alert"><Icon name="warning" size={20} /><span>{profileError}</span><button type="button" className="btn-secondary" onClick={loadProfile}>Try again</button></div>
+        ) : (
+          <>
+            <div className="profile-avatar" aria-hidden="true">{initials || <Icon name="profile" size={30} />}</div>
+            <div className="profile-identity-copy"><span className="profile-eyebrow">{accountType.toUpperCase()} ACCOUNT</span><h2 id="profile-identity-heading">{profile.name}</h2><p>{profile.email}</p></div>
+            <span className="profile-type-label"><Icon name={profile.user_type === 'farmer' ? 'assessment' : 'water'} size={17} />{accountType}</span>
+          </>
+        )}
+      </section>
+
+      <section className="profile-settings-section" aria-labelledby="profile-settings-heading">
+        <div className="profile-section-heading"><div><span className="profile-eyebrow">ACCOUNT DETAILS</span><h2 id="profile-settings-heading">Personal information</h2><p>Update the information associated with your AquaWise account.</p></div></div>
+        {profile && !profileError && <form onSubmit={handleSave} className="profile-settings-card">
+          <div className="profile-form-grid">
+            <div className="form-group"><label htmlFor="prof-name">Display name</label><input id="prof-name" type="text" autoComplete="name" value={formName} onChange={(event) => { setFormName(event.target.value); setSaveSuccess(false); }} maxLength={100} required disabled={saving} /><span className="profile-field-note">This is the name shown on your account.</span></div>
+            <div className="form-group"><label htmlFor="prof-email">Email address <span>Read only</span></label><input id="prof-email" type="email" value={profile.email || ''} readOnly aria-readonly="true" /><span className="profile-field-note">Email changes are not available here.</span></div>
+            <div className="form-group profile-account-type-field"><label htmlFor="prof-type">Account type</label><select id="prof-type" value={formUserType} onChange={(event) => { setFormUserType(event.target.value); setSaveSuccess(false); }} disabled={saving}><option value="household">Household</option><option value="farmer">Farmer</option></select><span className="profile-field-note">Choose the profile that best describes your water use.</span></div>
           </div>
-
-          {/* Edit form below the header card */}
-          <div className="profile-form-card">
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.25rem' }}>Edit Account</h3>
-            <form onSubmit={handleSave} className="profile-form">
-              <div className="form-group">
-                <label htmlFor="prof-name">Display Name</label>
-                <input id="prof-name" type="text" value={formName}
-                  onChange={e => { setFormName(e.target.value); setSaveSuccess(false); }}
-                  maxLength={100} required disabled={saving} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="prof-type">User Type</label>
-                <select id="prof-type" value={formUserType}
-                  onChange={e => setFormUserType(e.target.value)} disabled={saving}>
-                  <option value="household">Household</option>
-                  <option value="farmer">Farmer</option>
-                </select>
-              </div>
-
-              {saveError && <div className="auth-error">{saveError}</div>}
-              {saveSuccess && <div className="save-success">✓ Profile saved successfully.</div>}
-
-              <button type="submit" className="btn-primary auth-submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </form>
+          <div className="profile-save-row">
+            <div className="profile-save-feedback" aria-live="polite">{saveError && <span className="profile-save-error" role="alert"><Icon name="warning" size={17} />{saveError}</span>}{saveSuccess && <span className="profile-save-success" role="status"><span aria-hidden="true">✓</span> Your profile has been saved.</span>}</div>
+            <button type="submit" className="btn-primary profile-save-button" disabled={saving || !formName.trim()}>{saving ? <><span className="spinner profile-button-spinner" />Saving changes…</> : 'Save changes'}</button>
           </div>
+        </form>}
+      </section>
 
-          {/* Stats */}
-          <div className="profile-stats-card">
-            <p className="stats-heading">Your Stats</p>
-            <div className="profile-stats">
-              <div className="profile-stat">
-                <span className="profile-stat-value">{profile?.assessment_count ?? 0}</span>
-                <span className="profile-stat-label">Assessments</span>
-              </div>
-              <div className="profile-stat">
-                <span className="profile-stat-value">{streak.current_streak ?? 0}</span>
-                <span className="profile-stat-label">Day Streak 🔥</span>
-              </div>
-              <div className="profile-stat">
-                <span className="profile-stat-value">{streak.longest_streak ?? 0}</span>
-                <span className="profile-stat-label">Best Streak</span>
-              </div>
-              <div className="profile-stat">
-                <span className="profile-stat-value">{badges.length}</span>
-                <span className="profile-stat-label">Badges Earned</span>
-              </div>
-            </div>
-          </div>
+      {!profileLoading && !profileError && <section className="profile-statistics-section" aria-labelledby="profile-statistics-heading">
+        <div className="profile-section-heading"><div><span className="profile-eyebrow">YOUR CONSERVATION RECORD</span><h2 id="profile-statistics-heading">At a glance</h2></div></div>
+        <div className="profile-stats">
+          <article className="profile-stat"><span className="profile-stat-icon"><Icon name="assessment" size={19} /></span><span className="profile-stat-value">{profile.assessment_count ?? 0}</span><span className="profile-stat-label">Assessments completed</span></article>
+          <article className="profile-stat"><span className="profile-stat-icon"><Icon name="trend" size={19} /></span><span className="profile-stat-value">{profile.streak?.current_streak ?? 0}<small> days</small></span><span className="profile-stat-label">Current streak</span></article>
+          <article className="profile-stat"><span className="profile-stat-icon"><Icon name="calendar" size={19} /></span><span className="profile-stat-value">{profile.streak?.longest_streak ?? 0}<small> days</small></span><span className="profile-stat-label">Longest streak</span></article>
+          <article className="profile-stat"><span className="profile-stat-icon"><Icon name="score" size={19} /></span><span className="profile-stat-value">{badges.length}</span><span className="profile-stat-label">Achievements earned</span></article>
         </div>
+      </section>}
 
-        {/* ── Right Column: Achievements ── */}
-        <div className="achievements-section">
-          <div className="achievements-header">
-            <h3>Achievements</h3>
-            <span className="achievements-count">{unlockedCount} / {achievements.length} unlocked</span>
-          </div>
-
-          {achievements.length === 0 ? (
-            <div className="empty-state" style={{ padding: '2rem', border: 'none' }}>
-              <div className="empty-icon">🏅</div>
-              <p>Complete assessments to earn achievements!</p>
-            </div>
-          ) : (
-            <div className="achievements-list">
-              {[...achievements]
-                .sort((a, b) => (b.unlocked ? 1 : 0) - (a.unlocked ? 1 : 0))
-                .map((ach, i) => (
-                  <motion.div key={ach.id}
-                    initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                  >
-                    <AchievementCard achievement={ach} />
-                  </motion.div>
-                ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </motion.div>
+      <section className="achievements-section" aria-labelledby="achievements-heading">
+        <div className="achievements-header"><div><span className="profile-eyebrow">MILESTONES</span><h2 id="achievements-heading">Achievements</h2><p>Recognition for the conservation habits you build over time.</p></div>{!achievementsLoading && !achievementsError && <span className="achievements-count">{unlockedCount} of {achievements.length} completed</span>}</div>
+        {achievementsLoading ? <LoadingState label="Loading achievements…" /> : achievementsError ? (
+          <div className="profile-achievement-error" role="alert"><Icon name="warning" size={20} /><div><h3>Achievements are temporarily unavailable</h3><p>{achievementsError}</p></div><button type="button" className="btn-secondary" onClick={loadAchievements}>Try again</button></div>
+        ) : achievements.length === 0 ? (
+          <div className="profile-achievement-empty"><span className="profile-empty-icon"><Icon name="score" size={23} /></span><div><h3>Your milestones start here</h3><p>Complete an assessment to begin building your AquaWise conservation record.</p></div><Link to="/assessment" className="btn-secondary">Start an assessment <Icon name="arrowRight" size={16} /></Link></div>
+        ) : (
+          <div className="achievements-list">{[...achievements].sort((a, b) => Number(b?.unlocked === true) - Number(a?.unlocked === true)).map((achievement, index) => <AchievementCard key={achievement.id ?? `${achievement.name || 'achievement'}-${index}`} achievement={achievement} index={index} />)}</div>
+        )}
+      </section>
+    </motion.main>
   );
-};
+}
 
 export default Profile;
