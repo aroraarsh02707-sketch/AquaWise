@@ -1,272 +1,219 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { assistantService } from '../services/api';
+import Icon from '../components/Icon';
 
-// ─── Small sub-components ────────────────────────────────────────────────────
+const suggestions = [
+  'Where could I save water at home?',
+  'How can I make my showers more efficient?',
+  'What does my latest water assessment mean?',
+];
 
-const TypingDot = () => (
-  <div className="typing-indicator">
-    <span /><span /><span />
-  </div>
-);
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+}
 
-const Message = ({ msg }) => {
-  const isUser = msg.role === 'user';
+function ConversationHistory({ conversations, activeId, onSelect, onNew, loading, error, onRetry, onClose }) {
   return (
-    <motion.div
-      className={`chat-message ${isUser ? 'user' : 'assistant'}`}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-    >
-      {!isUser && (
-        <div className="chat-avatar assistant-avatar">💧</div>
-      )}
-      <div className="chat-bubble">
-        <p>{msg.message || msg.text}</p>
+    <>
+      <div className="chat-sidebar-header">
+        <div><span className="chat-section-label">YOUR SPACE</span><h2>Conversations</h2></div>
+        <div className="chat-history-actions">
+          <button type="button" className="chat-new-button" onClick={onNew}><span aria-hidden="true">+</span> New chat</button>
+          <button type="button" className="chat-close-history" onClick={onClose} aria-label="Close conversation history"><Icon name="close" /></button>
+        </div>
       </div>
-      {isUser && (
-        <div className="chat-avatar user-avatar">You</div>
-      )}
-    </motion.div>
-  );
-};
-
-// ─── Conversation Sidebar ────────────────────────────────────────────────────
-
-const ConversationSidebar = ({ conversations, activeId, onSelect, onNew }) => (
-  <div className="chat-sidebar">
-    <div className="chat-sidebar-header">
-      <span>History</span>
-      <button className="btn-icon-sm" onClick={onNew} title="New conversation">＋</button>
-    </div>
-    <div className="chat-sidebar-list">
-      {conversations.length === 0 ? (
-        <p className="chat-sidebar-empty">No conversations yet.</p>
-      ) : (
-        conversations.map(c => (
+      <div className="chat-sidebar-list" aria-label="Conversation history">
+        {loading ? <div className="chat-history-state" role="status"><span className="spinner" />Loading conversations…</div> : null}
+        {!loading && error ? <div className="chat-history-state"><p>{error}</p><button type="button" className="chat-text-button" onClick={onRetry}>Try again</button></div> : null}
+        {!loading && !error && conversations.length === 0 ? <p className="chat-sidebar-empty">Your conversations will appear here.</p> : null}
+        {!loading && !error && conversations.map((conversation) => (
           <button
-            key={c.id}
-            className={`chat-sidebar-item ${c.id === activeId ? 'active' : ''}`}
-            onClick={() => onSelect(c.id)}
+            type="button"
+            key={conversation.id}
+            className={`chat-sidebar-item ${conversation.id === activeId ? 'active' : ''}`}
+            onClick={() => onSelect(conversation.id)}
+            aria-current={conversation.id === activeId ? 'page' : undefined}
           >
-            <span className="chat-sidebar-title">{c.title}</span>
-            <span className="chat-sidebar-date">
-              {c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}
-            </span>
+            <span className="chat-sidebar-item-icon"><Icon name="assistant" size={17} /></span>
+            <span className="chat-sidebar-item-copy"><span className="chat-sidebar-title">{conversation.title || 'Water Conservation Chat'}</span><span className="chat-sidebar-meta">{formatDate(conversation.updated_at)}{conversation.message_count ? ` · ${conversation.message_count} messages` : ''}</span></span>
           </button>
-        ))
-      )}
-    </div>
-  </div>
-);
+        ))}
+      </div>
+      <div className="chat-history-footer"><Icon name="water" size={17} /><span>Small changes add up to lasting impact.</span></div>
+    </>
+  );
+}
 
-// ─── Main Assistant Page ─────────────────────────────────────────────────────
+function Message({ message }) {
+  const isUser = message.role === 'user';
+  return (
+    <motion.article className={`chat-message ${isUser ? 'user' : 'assistant'}`} initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+      {!isUser && <span className="chat-avatar assistant-avatar" aria-hidden="true"><Icon name="water" size={18} /></span>}
+      <div className="chat-message-content">
+        <div className="chat-message-label">{isUser ? 'You' : 'AquaWise assistant'}{message.created_at && <time dateTime={message.created_at}>{formatDate(message.created_at)}</time>}</div>
+        <div className="chat-bubble"><p>{message.message || message.text}</p>{!isUser && message.disclaimer && <small className="chat-message-disclaimer">{message.disclaimer}</small>}</div>
+      </div>
+      {isUser && <span className="chat-avatar user-avatar" aria-hidden="true">Y</span>}
+    </motion.article>
+  );
+}
 
-const Assistant = () => {
+function Assistant() {
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
+  const [activeTitle, setActiveTitle] = useState('New conversation');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingConv, setLoadingConv] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [error, setError] = useState(null);
+  const [historyError, setHistoryError] = useState('');
+  const [error, setError] = useState('');
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const activeRequest = useRef(0);
 
-  // Load conversation list on mount
-  useEffect(() => {
-    const fetchConversations = async () => {
-      try {
-        const res = await assistantService.getConversations();
-        if (res.data.success) {
-          setConversations(res.data.data.conversations);
-        }
-      } catch {
-        // non-fatal: sidebar just stays empty
-      } finally {
-        setLoadingHistory(false);
-      }
-    };
-    fetchConversations();
+  const fetchConversations = useCallback(async () => {
+    setLoadingHistory(true);
+    setHistoryError('');
+    try {
+      const response = await assistantService.getConversations();
+      if (!response.data.success) throw new Error('Could not load conversations.');
+      setConversations(response.data.data.conversations || []);
+    } catch {
+      setHistoryError('Conversation history could not be loaded.');
+    } finally {
+      setLoadingHistory(false);
+    }
   }, []);
 
-  // Auto-scroll to latest message
+  // Initial load synchronizes the conversation list with the API.
+  // eslint-disable-next-line react/set-state-in-effect
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, sending, loadingConv]);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!mobileHistoryOpen) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setMobileHistoryOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileHistoryOpen]);
 
-  const loadConversation = async (convId) => {
+  const loadConversation = async (conversationId) => {
+    const requestId = ++activeRequest.current;
     setLoadingConv(true);
-    setError(null);
+    setError('');
     try {
-      const res = await assistantService.getConversation(convId);
-      if (res.data.success) {
-        const conv = res.data.data.conversation;
-        setActiveConvId(conv.id);
-        setMessages(conv.messages || []);
-      }
+      const response = await assistantService.getConversation(conversationId);
+      if (!response.data.success) throw new Error('Could not load this conversation.');
+      if (requestId !== activeRequest.current) return;
+      const conversation = response.data.data.conversation;
+      setActiveConvId(conversation.id);
+      setActiveTitle(conversation.title || 'Water Conservation Chat');
+      setMessages(conversation.messages || []);
+      setMobileHistoryOpen(false);
     } catch {
-      setError('Failed to load conversation.');
+      if (requestId === activeRequest.current) setError('This conversation could not be loaded. Please try again.');
     } finally {
-      setLoadingConv(false);
+      if (requestId === activeRequest.current) setLoadingConv(false);
     }
   };
 
   const startNewConversation = () => {
+    activeRequest.current += 1;
     setActiveConvId(null);
+    setActiveTitle('New conversation');
     setMessages([]);
-    setError(null);
+    setError('');
+    setMobileHistoryOpen(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const sendMessage = async () => {
+  const sendMessage = async (event) => {
+    event?.preventDefault();
     const text = input.trim();
-    if (!text || sending) return;
-
-    setInput('');
+    if (!text || sending || loadingConv) return;
     setSending(true);
-    setError(null);
-
-    // Optimistic UI: append user message immediately
-    const optimisticMsg = { role: 'user', message: text };
-    setMessages(prev => [...prev, optimisticMsg]);
-
+    setError('');
+    setInput('');
+    setMessages((previous) => [...previous, { role: 'user', message: text }]);
     try {
-      const res = await assistantService.chat(text, activeConvId);
-      if (res.data.success) {
-        const { conversation_id, message: assistantText } = res.data.data;
-
-        // If new conversation, set the ID and refresh sidebar
-        if (!activeConvId) {
-          setActiveConvId(conversation_id);
-          // Reload conversations list to show the new one
-          try {
-            const convRes = await assistantService.getConversations();
-            if (convRes.data.success) {
-              setConversations(convRes.data.data.conversations);
-            }
-          } catch { /* sidebar refresh is non-fatal */ }
-        }
-
-        setMessages(prev => [...prev, { role: 'assistant', message: assistantText }]);
+      const response = await assistantService.chat(text, activeConvId);
+      if (!response.data.success) throw new Error('Message could not be sent.');
+      const data = response.data.data;
+      if (!activeConvId) {
+        setActiveConvId(data.conversation_id);
+        setActiveTitle(text.length > 40 ? `${text.slice(0, 37)}...` : text);
       }
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to send message. Please try again.');
-      // Remove the optimistic user message on error
-      setMessages(prev => prev.slice(0, -1));
+      setMessages((previous) => [...previous, { role: 'assistant', message: data.message, disclaimer: data.disclaimer, source: data.source }]);
+      void fetchConversations();
+    } catch (sendError) {
+      const message = sendError.response?.data?.error?.message;
+      setError(message || 'Your message could not be sent. It is still here so you can retry.');
+      setMessages((previous) => previous.slice(0, -1));
+      setInput(text);
+      requestAnimationFrame(() => inputRef.current?.focus());
     } finally {
       setSending(false);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
     }
   };
 
   const isEmpty = messages.length === 0;
 
   return (
-    <motion.div
-      className="assistant-page"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      <header className="page-header" style={{ marginBottom: '1.5rem' }}>
-        <div>
-          <h2>AI Water Assistant</h2>
-          <p className="subtitle">Ask anything about water conservation, your usage, or saving tips.</p>
-        </div>
+    <motion.main className="assistant-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+      <header className="page-header assistant-page-header">
+        <div><span className="chat-eyebrow">AQUAWISE · CONSERVATION COMPANION</span><h1>Water, made clearer.</h1><p className="subtitle">Explore practical ways to understand and reduce your water use.</p></div>
+        <div className="chat-page-links"><Link to="/dashboard">Dashboard <Icon name="arrowRight" size={16} /></Link><Link to="/recommendations">Recommendations <Icon name="arrowRight" size={16} /></Link></div>
       </header>
 
-      <div className="chat-layout">
-        {/* Sidebar */}
-        {!loadingHistory && (
-          <ConversationSidebar
-            conversations={conversations}
-            activeId={activeConvId}
-            onSelect={loadConversation}
-            onNew={startNewConversation}
-          />
-        )}
+      <section className="chat-workspace" aria-label="AquaWise assistant">
+        <AnimatePresence>
+          {mobileHistoryOpen && <motion.button type="button" className="chat-history-backdrop" aria-label="Close conversation history" onClick={() => setMobileHistoryOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
+        </AnimatePresence>
+        <aside className={`chat-sidebar ${mobileHistoryOpen ? 'mobile-open' : ''}`} aria-label="Conversation history">
+          <ConversationHistory conversations={conversations} activeId={activeConvId} onSelect={loadConversation} onNew={startNewConversation} loading={loadingHistory} error={historyError} onRetry={fetchConversations} onClose={() => setMobileHistoryOpen(false)} />
+        </aside>
 
-        {/* Main Chat Area */}
         <div className="chat-main">
-          {/* Messages */}
-          <div className="chat-messages">
-            {loadingConv ? (
-              <div className="dashboard-loading" style={{ height: '100%' }}>
-                <div className="spinner" />
-                <p>Loading conversation...</p>
-              </div>
-            ) : isEmpty ? (
+          <div className="chat-conversation-header">
+            <button type="button" className="chat-history-toggle" onClick={() => setMobileHistoryOpen(true)} aria-label="Open conversation history"><Icon name="menu" size={19} /><span>History</span></button>
+            <div className="chat-current-title"><span className="chat-status-mark" /><div><span className="chat-current-label">CURRENT CONVERSATION</span><h2>{activeTitle}</h2></div></div>
+            <span className="chat-assistant-tag"><Icon name="water" size={15} /> AquaWise</span>
+          </div>
+
+          <div className="chat-messages" aria-live="polite" aria-relevant="additions text" aria-busy={loadingConv || sending}>
+            {loadingConv ? <div className="chat-loading-state" role="status"><span className="spinner" /><p>Opening conversation…</p></div> : isEmpty ? (
               <div className="chat-empty-state">
-                <div className="chat-empty-icon">💧</div>
-                <h3>Start a conversation</h3>
-                <p>Ask me about your water usage, conservation tips, or how to improve your Water Saver Score.</p>
-                <div className="chat-suggestions">
-                  {['How can I reduce my shower usage?', 'What is a good Water Saver Score?', 'Tips for kitchen water saving'].map(s => (
-                    <button key={s} className="chat-suggestion-btn" onClick={() => { setInput(s); }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                <span className="chat-empty-icon"><Icon name="water" size={27} /></span>
+                <span className="chat-section-label">AQUAWISE ASSISTANT</span>
+                <h3>What would you like to understand?</h3>
+                <p>Ask about everyday conservation. For your measured usage and tailored actions, visit your assessment and recommendations.</p>
+                <div className="chat-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} className="chat-suggestion-btn" onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}>{suggestion}<Icon name="arrowRight" size={16} /></button>)}</div>
+                <Link className="chat-assessment-link" to="/assessment">View your water assessment <Icon name="arrowRight" size={16} /></Link>
               </div>
-            ) : (
-              <>
-                {messages.map((msg, i) => <Message key={i} msg={msg} />)}
-                {sending && (
-                  <div className="chat-message assistant">
-                    <div className="chat-avatar assistant-avatar">💧</div>
-                    <div className="chat-bubble"><TypingDot /></div>
-                  </div>
-                )}
-              </>
-            )}
+            ) : <>{messages.map((message, index) => <Message key={message.id || `${message.role}-${index}`} message={message} />)}{sending && <div className="chat-message assistant"><span className="chat-avatar assistant-avatar"><Icon name="water" size={18} /></span><div className="chat-message-content"><div className="chat-message-label">AquaWise assistant</div><div className="chat-bubble chat-typing"><span>Preparing a response</span><span className="typing-indicator" aria-hidden="true"><i /><i /><i /></span></div></div></div>}</>}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Error Banner */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                className="auth-error"
-                style={{ margin: '0.5rem 1rem', borderRadius: '8px' }}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-              >
-                {error}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <AnimatePresence>{error && <motion.div className="chat-error" role="alert" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }}><Icon name="warning" size={18} /><span>{error}</span>{input.trim() && <button type="button" onClick={sendMessage} disabled={sending}>Retry</button>}</motion.div>}</AnimatePresence>
 
-          {/* Input Area */}
-          <div className="chat-input-area">
-            <textarea
-              className="chat-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
-              rows={2}
-              disabled={sending || loadingConv}
-            />
-            <button
-              className="btn-primary chat-send-btn"
-              onClick={sendMessage}
-              disabled={!input.trim() || sending || loadingConv}
-            >
-              {sending ? <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : '→'}
-            </button>
-          </div>
+          <form className="chat-input-area" onSubmit={sendMessage}>
+            <label className="chat-composer-label" htmlFor="assistant-message">YOUR MESSAGE</label>
+            <div className="chat-composer-row">
+              <textarea id="assistant-message" ref={inputRef} className="chat-input" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Ask a question about water conservation…" rows={2} disabled={sending || loadingConv} />
+              <button type="submit" className="chat-send-btn" disabled={!input.trim() || sending || loadingConv} aria-label={sending ? 'Sending message' : 'Send message'}>{sending ? <span className="spinner" /> : <Icon name="arrowRight" size={20} />}</button>
+            </div>
+            <div className="chat-composer-footer"><span>Enter to send <span aria-hidden="true">·</span> Shift + Enter for a new line</span><span>Responses are conversational; see your AquaWise assessment for recorded usage data.</span></div>
+          </form>
         </div>
-      </div>
-    </motion.div>
+      </section>
+    </motion.main>
   );
-};
+}
 
 export default Assistant;
