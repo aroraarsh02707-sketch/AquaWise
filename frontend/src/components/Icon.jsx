@@ -10,6 +10,10 @@ const paths = {
   menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
   close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   water: <><path d="M12 3.5S6.5 10 6.5 14.5a5.5 5.5 0 0 0 11 0C17.5 10 12 3.5 12 3.5Z" /><path d="M9.5 15.5a2.5 2.5 0 0 0 2.5 2" /></>,
+  calendar: <><rect x="3.5" y="5" width="17" height="16" rx="2" /><path d="M7.5 3v4M16.5 3v4M3.5 10h17" /></>,
+  score: <><circle cx="12" cy="9" r="6" /><path d="m9 14-1 7 4-2 4 2-1-7M12 6.5l.8 1.6 1.7.2-1.2 1.2.3 1.7-1.6-.8-1.5.8.3-1.7-1.3-1.2 1.7-.2.8-1.6Z" /></>,
+  trend: <><path d="m4 16 5-5 4 3 7-8" /><path d="M14 6h6v6" /></>,
+  arrowRight: <><path d="M4 12h15M13 6l6 6-6 6" /></>,
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 1.8, className = '' }) {
