@@ -2,7 +2,7 @@
 Authentication REST API Routes.
 
 Provides session-based authentication endpoints for the AquaWise React frontend:
-- POST /api/auth/register : Register a new user (household or farmer)
+- POST /api/auth/register : Register a household user
 - POST /api/auth/login    : Authenticate and establish user session
 - POST /api/auth/logout   : End current user session
 - GET  /api/auth/me       : Retrieve current authenticated user profile
@@ -51,7 +51,7 @@ def register():
         user = User(
             name=data["name"].strip(),
             email=email,
-            user_type=data.get("user_type", "household").strip().lower()
+            user_type="household"
         )
         user.set_password(data["password"])
         db.session.add(user)
@@ -115,6 +115,17 @@ def login():
                 "message": "Invalid email or password."
             }
         }), 401
+
+    # Keep legacy accounts and their records intact without opening the
+    # unsupported legacy workspace.
+    if user.user_type != "household":
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "ACCOUNT_TYPE_UNAVAILABLE",
+                "message": "This legacy account type is no longer supported. Its records have been preserved."
+            }
+        }), 403
 
     if not user.is_active:
         return jsonify({

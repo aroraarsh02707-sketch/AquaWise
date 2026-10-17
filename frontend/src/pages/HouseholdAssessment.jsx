@@ -71,7 +71,7 @@ export default function HouseholdAssessment() {
     if (current === 1) return <>
       <Question number={3} title="How does your household bathe?" detail="If you use more than one method, select both and complete both sets of details."><Choice id="bathing_method" label="Primary bathing method" value={answers.bathing_method} onChange={(v) => set('bathing_method',v)} choices={[["shower","Showers"],["bucket","Bucket baths"],["both","Both"]]}/>{['shower','both'].includes(answers.bathing_method) && <div className="field-pair">{requiredNumber('showers_per_person_per_day','Showers per person per day','showers','Enter zero if nobody showers.')}{requiredNumber('shower_duration_minutes','Average shower duration','minutes','Typical time with water running.')}{field('shower_flow_rate_lpm','Known shower flow rate','L/min','Optional. A disclosed configurable default is used if left blank.')}</div>}{['bucket','both'].includes(answers.bathing_method) && <div className="field-pair">{requiredNumber('bucket_baths_per_person_per_day','Bucket baths per person per day','baths','Enter zero if not used.')}{requiredNumber('buckets_per_bath','Buckets used per bath','buckets','Count full buckets per person per bath.')}{field('bucket_capacity_litres','Known bucket capacity','L/bucket','Optional; the configured bucket estimate is disclosed if blank.')}</div>}</Question>
       <Question number={4} title="How often is the toilet flushed?" detail="Toilet types vary; enter a known volume if the fixture label or manual provides it.">{requiredNumber('toilet_flushes_per_person_per_day','Flushes per person per day','flushes',null)}<div className="field-pair">{select('toilet_type','Toilet type',[["standard","Standard flush"],["dual_flush","Dual-flush"],["low_flow","Low-flow"],["unknown","I don’t know"]])}{field('toilet_flush_volume_litres','Known flush volume','L/flush','Overrides the configurable toilet-type estimate.')}</div></Question>
-      <Question number={5} title="How much do bathroom taps run?" detail="Include brushing, shaving, face washing and similar use. Estimate total time per resident per day.">{requiredNumber('bathroom_tap_minutes_per_person_per_day','Bathroom tap running time','minutes/person/day',null)}<div className="field-pair"><Choice id="tap_off_while_brushing" label="Turned off while brushing?" value={answers.tap_off_while_brushing} onChange={(v) => set('tap_off_while_brushing',v)} choices={[[true,'Usually'],[false,'Usually not']]}/>{field('bathroom_tap_flow_rate_lpm','Known bathroom tap flow','L/min','Optional; a configurable estimate is used if blank.')}</div></Question>
+      <Question number={5} title="How much do bathroom taps run?" detail="Include brushing, shaving, face washing and similar use. Estimate total time per resident per day."><div className="field-pair">{requiredNumber('bathroom_tap_minutes_per_person_per_day','Bathroom tap running time','minutes/person/day',null)}{field('bathroom_tap_flow_rate_lpm','Known bathroom tap flow','L/min','Optional; a configurable estimate is used if blank.')}</div><Choice id="tap_off_while_brushing" label="Turned off while brushing?" value={answers.tap_off_while_brushing} onChange={(v) => set('tap_off_while_brushing',v)} choices={[[true,'Usually'],[false,'Usually not']]}/></Question>
     </>;
     if (current === 2) return <>
       <Question number={6} title="How is water used in the kitchen?" detail="Count kitchen preparation separately from washing dishes.">{requiredNumber('kitchen_tap_minutes_per_day','Kitchen tap running time','minutes/day','Exclude dishwashing time if you can estimate it separately.')}{field('kitchen_tap_flow_rate_lpm','Known kitchen tap flow','L/min','Optional; a configurable estimate is used if blank.')}<Choice id="kitchen_tap_runs_while_washing" label="Does the tap run continuously while washing food or preparing it?" value={answers.kitchen_tap_runs_while_washing} onChange={(v) => set('kitchen_tap_runs_while_washing',v)} choices={[[true,'Usually'],[false,'Usually not']]}/>{select('dishwashing_method','Dishwashing method',[["running_water","Under running water"],["basin","Filled sink or basin"],["other","Another method"]])}{answers.dishwashing_method === 'running_water' ? field('dishwashing_tap_minutes_per_day','Dishwashing tap time','minutes/day','Optional if unknown; this part will be excluded from the total.') : field('dishwashing_litres_per_day','Dishwashing water used','L/day','Optional estimate for a basin or other method.')}</Question>
@@ -86,7 +86,27 @@ export default function HouseholdAssessment() {
     </>;
   })();
 
-  const buildPayload = () => ({ assessment_type:'household', assessment_version:2, household_size:Number(answers.household_size), showers_per_day:Number(answers.showers_per_person_per_day || 0), shower_duration_minutes:Number(answers.shower_duration_minutes || 0), toilet_uses_per_day:Number(answers.toilet_flushes_per_person_per_day || 0), laundry_loads_per_week:Number(answers.laundry_loads_per_week || 0), kitchen_usage_minutes:Number(answers.kitchen_tap_minutes_per_day || 0), vehicle_washing_frequency:null, gardening_frequency:answers.has_garden ? Number(answers.garden_sessions_per_week || 0) : 0, gardening_duration_minutes:Number(answers.garden_minutes_per_session || 0), other_usage_litres:0, extended_answers:answers });
+  const buildPayload = () => {
+    const extendedAnswers = {
+      ...answers,
+      laundry_loads_per_week: Number(answers.laundry_loads_per_week || 0),
+    };
+    return {
+      assessment_type: 'household',
+      assessment_version: 2,
+      household_size: Number(answers.household_size),
+      showers_per_day: Number(answers.showers_per_person_per_day || 0),
+      shower_duration_minutes: Number(answers.shower_duration_minutes || 0),
+      toilet_uses_per_day: Number(answers.toilet_flushes_per_person_per_day || 0),
+      laundry_loads_per_week: Number(answers.laundry_loads_per_week || 0),
+      kitchen_usage_minutes: Number(answers.kitchen_tap_minutes_per_day || 0),
+      vehicle_washing_frequency: null,
+      gardening_frequency: answers.has_garden ? Number(answers.garden_sessions_per_week || 0) : 0,
+      gardening_duration_minutes: Number(answers.garden_minutes_per_session || 0),
+      other_usage_litres: 0,
+      extended_answers: extendedAnswers,
+    };
+  };
   const goNext = () => {
     if (!formRef.current?.reportValidity()) return;
     const requiredChoices = current === 1 ? ['bathing_method','tap_off_while_brushing'] : current === 2 ? ['kitchen_tap_runs_while_washing','has_dishwasher','laundry_full_loads'] : current === 3 ? ['has_garden'] : [];

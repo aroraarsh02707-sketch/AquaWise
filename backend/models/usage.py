@@ -1,6 +1,6 @@
 """
 Usage Models.
-Stores Household details, Agricultural details, and Category Breakdowns.
+Stores household details, historical assessment details, and category breakdowns.
 """
 from backend.models import db
 
@@ -46,6 +46,7 @@ class HouseholdUsageDetails(db.Model):
 
 
 class FarmerUsageDetails(db.Model):
+    """Legacy table mapping retained to preserve existing assessment rows."""
     __tablename__ = "farmer_usage_details"
 
     id = db.Column(db.Integer, primary_key=True)

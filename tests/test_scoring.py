@@ -2,7 +2,7 @@
 Tests for AquaWise Deterministic Scoring & Streak Service (Task 2).
 
 Validates:
-1. Deterministic Water Saver Score calculation for household and farmer inputs.
+1. Deterministic Water Saver Score calculation for household inputs.
 2. Bounds enforcement (0 <= score <= 100).
 3. Score tier classification.
 4. Streak maintenance logic (same day, consecutive day, broken streak reset, longest streak retention).
@@ -37,8 +37,8 @@ class TestWaterSaverScoreCalculation:
 
     def test_missing_vehicle_frequency_has_no_bonus_but_explicit_zero_keeps_bonus(self):
         base_details = {"household_size": 1, "shower_duration_minutes": 0, "kitchen_usage_minutes": 0}
-        missing_score = calculate_water_saver_score(150.0, "household", {**base_details, "vehicle_washing_frequency": None})
-        zero_score = calculate_water_saver_score(150.0, "household", {**base_details, "vehicle_washing_frequency": 0})
+        missing_score = calculate_water_saver_score(150.0, {**base_details, "vehicle_washing_frequency": None})
+        zero_score = calculate_water_saver_score(150.0, {**base_details, "vehicle_washing_frequency": 0})
         assert missing_score == 70
         assert zero_score == 72
 
@@ -46,7 +46,6 @@ class TestWaterSaverScoreCalculation:
         """A household with 60 L/capita/day should score in the Champion tier (>= 90)."""
         score = calculate_water_saver_score(
             daily_consumption=120.0,
-            user_type="household",
             details={"household_size": 2, "shower_duration_minutes": 4.0}
         )
         assert 90 <= score <= 100
@@ -55,7 +54,6 @@ class TestWaterSaverScoreCalculation:
         """A household at the CPHEEO benchmark (150 L/capita/day) scores around 70."""
         score = calculate_water_saver_score(
             daily_consumption=300.0,
-            user_type="household",
             details={"household_size": 2}
         )
         assert 65 <= score <= 75
@@ -64,44 +62,17 @@ class TestWaterSaverScoreCalculation:
         """A household with 400 L/capita/day should receive a low score (<= 30)."""
         score = calculate_water_saver_score(
             daily_consumption=800.0,
-            user_type="household",
             details={"household_size": 2, "shower_duration_minutes": 15.0}
         )
         assert score <= 30
 
     def test_score_always_bounded_between_0_and_100(self):
         """Even extreme zero or absurdly large inputs must remain strictly within [0, 100]."""
-        zero_score = calculate_water_saver_score(0.0, user_type="household")
+        zero_score = calculate_water_saver_score(0.0)
         assert 0 <= zero_score <= 100
 
-        huge_score = calculate_water_saver_score(1_000_000.0, user_type="household")
+        huge_score = calculate_water_saver_score(1_000_000.0)
         assert 0 <= huge_score <= 100
-
-    def test_farmer_drip_with_rainwater_high_score(self):
-        """Drip irrigation with rainwater harvesting should score high (>= 90)."""
-        score = calculate_water_saver_score(
-            daily_consumption=1500.0,
-            user_type="farmer",
-            details={
-                "irrigation_method": "drip",
-                "rainwater_harvesting": True,
-                "irrigation_frequency": 2.0,
-            }
-        )
-        assert score >= 90
-
-    def test_farmer_flood_irrigation_moderate_low_score(self):
-        """Flood irrigation without rainwater harvesting should score moderate/low (~40-50)."""
-        score = calculate_water_saver_score(
-            daily_consumption=5000.0,
-            user_type="farmer",
-            details={
-                "irrigation_method": "flood",
-                "rainwater_harvesting": False,
-                "irrigation_frequency": 5.0,
-            }
-        )
-        assert 40 <= score <= 50
 
     def test_score_tiers(self):
         assert get_score_tier(92)["label"] == "Water Champion"

@@ -14,9 +14,6 @@ Public API
 calculate_household_consumption(data) -> dict
     Accepts validated household assessment data and returns a result dict.
 
-calculate_farmer_consumption(data) -> dict
-    Accepts validated farmer assessment data and returns a result dict.
-
 Both functions return the same shape:
     {
         "daily_consumption":   float,   # litres/day
@@ -52,10 +49,6 @@ from backend.utils.constants import (
     GARDENING_DRIP_FLOW_RATE_LPM,
     GARDENING_BUCKET_FLOW_RATE_LPM,
     GARDENING_DEFAULT_FLOW_RATE_LPM,
-    # Irrigation
-    ACRES_TO_HECTARES,
-    IRRIGATION_RATE_L_PER_HA_PER_HOUR,
-    IRRIGATION_RATE_DEFAULT,
     # Time constants
     DAYS_IN_WEEK,
     DAYS_IN_MONTH,
@@ -476,87 +469,3 @@ def calculate_household_assessment_v2(data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Farmer / Agricultural calculation
-# ---------------------------------------------------------------------------
-
-def calculate_farmer_consumption(data: dict) -> dict:
-    """
-    Estimate a farm's daily water consumption for irrigation.
-
-    Parameters
-    ----------
-    data : dict
-        Validated farmer assessment data.
-
-        Field                       Unit
-        -----------------------     ---------------
-        farm_area                   float (numeric)
-        farm_area_unit              'acre' or 'hectare'
-        irrigation_method           flood / drip / sprinkler / other
-        irrigation_frequency        sessions per week
-        irrigation_duration_minutes minutes per session
-        estimated_irrigation_litres litres per session (user-provided override)
-        rainwater_harvesting        bool — contextual only; no volume supplied
-
-    Strategy
-    --------
-    Priority 1 — User-provided estimate:
-        If `estimated_irrigation_litres > 0`, use that value directly as the
-        litres per irrigation session.  This is the most accurate because it
-        comes from the farmer's own observation.
-
-    Priority 2 — Model estimate from area + method + duration:
-        If no user estimate is provided, calculate:
-            litres_per_session = area_ha × (duration_h) × rate_L_ha_h
-        where `rate_L_ha_h` depends on the irrigation method (see constants.py).
-
-    Rainwater harvesting:
-        The yes/no flag is recorded as context only. It does not quantify the
-        share of irrigation supplied by rainwater, so it cannot safely reduce
-        the consumption estimate.
-
-    Notes
-    -----
-    - Irrigation sessions are per week; divide by 7 for daily equivalent.
-    - If frequency or duration is 0, the calculated result will be 0 L/day.
-    """
-    farm_area           = _safe_float(data.get("farm_area"))
-    farm_area_unit      = (data.get("farm_area_unit") or "acre").strip().lower()
-    irrigation_method   = (data.get("irrigation_method") or "other").strip().lower()
-    freq_per_week       = _safe_float(data.get("irrigation_frequency"))
-    duration_minutes    = _safe_float(data.get("irrigation_duration_minutes"))
-    user_estimate_L     = _safe_float(data.get("estimated_irrigation_litres"))
-    rainwater_harvesting = bool(data.get("rainwater_harvesting", False))
-
-    # Convert area to hectares
-    if farm_area_unit == "acre":
-        area_ha = farm_area * ACRES_TO_HECTARES
-    else:
-        area_ha = farm_area  # already in hectares
-
-    # Determine litres per irrigation session
-    if user_estimate_L > 0:
-        # Priority 1: use the farmer's own estimate
-        litres_per_session = user_estimate_L
-        source_note = "user-provided estimate"
-    else:
-        # Priority 2: model from area × duration × method rate
-        duration_hours = duration_minutes / 60.0
-        rate = IRRIGATION_RATE_L_PER_HA_PER_HOUR.get(irrigation_method, IRRIGATION_RATE_DEFAULT)
-        litres_per_session = area_ha * duration_hours * rate
-        source_note = f"estimated from area={farm_area} {farm_area_unit}, method={irrigation_method}"
-
-    # Daily irrigation equivalent (sessions per week ÷ 7)
-    irrigation_litres_per_day = (litres_per_session * freq_per_week) / DAYS_IN_WEEK
-
-    category_litres = {
-        "Irrigation": max(0.0, irrigation_litres_per_day),
-    }
-
-    daily, breakdown = _build_breakdown(category_litres)
-
-    result = _result(daily, breakdown)
-    result["calculation_note"] = f"Irrigation estimate based on {source_note}."
-    if rainwater_harvesting:
-        result["calculation_note"] += " Rainwater harvesting was reported, but no volume credit was applied because the supplied share is unknown."
-    return result

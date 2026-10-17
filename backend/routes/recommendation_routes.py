@@ -65,12 +65,7 @@ def get_assessment_recommendations(assessment_id: int):
 
     if enhance_requested:
         # Prepare context for AI enhancement from stored assessment details & breakdown
-        if assessment.assessment_type == "household" and assessment.household_details:
-            details = assessment.household_details.to_dict()
-        elif assessment.assessment_type == "farmer" and assessment.farmer_details:
-            details = assessment.farmer_details.to_dict()
-        else:
-            details = {}
+        details = assessment.household_details.to_dict() if assessment.household_details else {}
 
         calc_results = {
             "daily_consumption": assessment.daily_consumption,
@@ -83,7 +78,6 @@ def get_assessment_recommendations(assessment_id: int):
         recs_list = enhance_recommendations(
             assessment_data=details,
             calculation_results=calc_results,
-            user_type=assessment.assessment_type,
         )
 
         overall_source = "hybrid" if any(r.get("source") == "hybrid" for r in recs_list) else "rule_based"
@@ -93,7 +87,7 @@ def get_assessment_recommendations(assessment_id: int):
         overall_source = stored_recs[0].source if stored_recs else "rule_based"
 
     # Always sort recommendations by potential water savings descending
-    recs_list.sort(key=lambda r: float(r.get("potential_saving", 0.0)), reverse=True)
+    recs_list.sort(key=lambda r: float(r.get("potential_saving") or 0.0), reverse=True)
 
     return jsonify({
         "success": True,

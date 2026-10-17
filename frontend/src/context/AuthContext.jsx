@@ -44,7 +44,9 @@ export const AuthProvider = ({ children }) => {
   // Returns { success: true } or { success: false, error: string }
   const register = async (userData) => {
     try {
-      const response = await authService.register(userData);
+      // Registration is household-only. Keep the fixed account type in the
+      // request for API deployments that still require this field.
+      const response = await authService.register({ ...userData, user_type: 'household' });
       if (response.data.success) {
         setUser(response.data.data.user);
         return { success: true };

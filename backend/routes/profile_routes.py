@@ -3,14 +3,13 @@ Profile & Gamification REST API Routes (Task 7).
 
 Endpoints:
 - GET /api/profile : Get current user's profile, streak stats, assessment count, and earned badges.
-- PUT /api/profile : Update permitted profile fields (name, user_type).
+- PUT /api/profile : Update permitted profile fields (name).
 - GET /api/profile/achievements : Get all achievements and user's unlock status.
 """
 
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 from backend.models import db, User, Streak, Achievement, UserAchievement, Assessment
-from backend.utils.validators import VALID_USER_TYPES
 
 profile_bp = Blueprint("profile", __name__)
 
@@ -26,9 +25,7 @@ def _validate_profile_update(data: dict) -> dict:
             errors["name"] = "Name must not exceed 100 characters."
             
     if "user_type" in data:
-        user_type = str(data["user_type"]).strip().lower()
-        if user_type not in VALID_USER_TYPES:
-            errors["user_type"] = "Invalid user type."
+        errors["user_type"] = "Account type cannot be changed."
             
     return errors
 
@@ -91,10 +88,6 @@ def update_profile():
     updated = False
     if "name" in data:
         current_user.name = str(data["name"]).strip()
-        updated = True
-        
-    if "user_type" in data:
-        current_user.user_type = str(data["user_type"]).strip().lower()
         updated = True
         
     if updated:

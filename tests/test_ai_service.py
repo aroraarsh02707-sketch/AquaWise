@@ -3,7 +3,7 @@ Tests for AquaWise AI Service (backend/services/ai_service.py).
 
 Validates:
 1. AI service configuration and status reporting (without leaking credentials).
-2. Deterministic rule-based fallback recommendation generation for household and farmer users.
+2. Deterministic rule-based fallback recommendation generation for household users.
 3. Safe offline fallback when AI API key is missing.
 4. AI recommendation enhancement with preservation of deterministic numbers.
 5. Graceful handling of API errors, timeouts, and malformed responses.
@@ -25,7 +25,6 @@ from backend.services.ai_service import (
 )
 from backend.services.calculation_service import (
     calculate_household_consumption,
-    calculate_farmer_consumption,
 )
 
 
@@ -45,20 +44,6 @@ def sample_household_data():
         "gardening_frequency": 3,
         "gardening_duration_minutes": 20,
         "other_usage_litres": 10,
-    }
-
-
-def sample_farmer_data():
-    return {
-        "farm_area": 5.0,
-        "farm_area_unit": "acre",
-        "crop_type": "rice",
-        "irrigation_method": "flood",
-        "irrigation_frequency": 3,
-        "irrigation_duration_minutes": 120,
-        "water_source": "canal",
-        "rainwater_harvesting": False,
-        "estimated_irrigation_litres": 0,
     }
 
 
@@ -105,7 +90,7 @@ class TestFallbackRecommendations:
     def test_household_fallback_recommendations_structure(self):
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="household")
+        recs = get_fallback_recommendations(data, calc)
 
         assert len(recs) >= 3
         for r in recs:
@@ -120,7 +105,7 @@ class TestFallbackRecommendations:
     def test_household_high_shower_triggers_bathing_recommendation(self):
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="household")
+        recs = get_fallback_recommendations(data, calc)
 
         categories = [r["category"] for r in recs]
         assert "Bathing" in categories
@@ -131,40 +116,36 @@ class TestFallbackRecommendations:
     def test_household_vehicle_washing_triggers_bucket_recommendation(self):
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="household")
+        recs = get_fallback_recommendations(data, calc)
 
         veh_rec = next((r for r in recs if r["category"] == "Vehicle Washing"), None)
         assert veh_rec is not None
         assert "bucket" in veh_rec["description"].lower()
 
-    def test_farmer_flood_irrigation_triggers_drip_upgrade(self):
-        data = sample_farmer_data()
-        calc = calculate_farmer_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="farmer")
-
-        irr_rec = next((r for r in recs if r["category"] == "Irrigation"), None)
-        assert irr_rec is not None
-        assert irr_rec["priority"] == "high"
-        assert "drip" in irr_rec["title"].lower()
-        # Savings should be substantial for flood irrigation
-        assert irr_rec["potential_saving"] >= 50.0
-
-    def test_farmer_no_rainwater_triggers_catchment_recommendation(self):
-        data = sample_farmer_data()
-        data["rainwater_harvesting"] = False
-        calc = calculate_farmer_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="farmer")
-
-        titles = [r["title"].lower() for r in recs]
-        assert any("rainwater" in t for t in titles)
-
     def test_recommendations_sorted_by_potential_saving(self):
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = get_fallback_recommendations(data, calc, user_type="household")
+        recs = get_fallback_recommendations(data, calc)
 
         savings = [r["potential_saving"] for r in recs]
         assert savings == sorted(savings, reverse=True)
+
+    def test_v2_partial_laundry_answer_accepts_form_numeric_strings(self):
+        data = {
+            "assessment_type": "household",
+            "assessment_version": 2,
+            "household_size": 1,
+            "extended_answers": {
+                "laundry_loads_per_week": "4",
+                "laundry_full_loads": False,
+                "laundry_method": "front_load",
+            },
+        }
+        calc = calculate_household_consumption(data)
+
+        recs = get_fallback_recommendations(data, calc)
+
+        assert any(recommendation["title"] == "Combine partial laundry loads" for recommendation in recs)
 
 
 # ===========================================================================
@@ -180,7 +161,7 @@ class TestRecommendationEnhancement:
 
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = enhance_recommendations(data, calc, user_type="household")
+        recs = enhance_recommendations(data, calc)
 
         assert len(recs) > 0
         for r in recs:
@@ -193,7 +174,7 @@ class TestRecommendationEnhancement:
 
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        base_recs = get_fallback_recommendations(data, calc, user_type="household")
+        base_recs = get_fallback_recommendations(data, calc)
 
         # Mock successful AI JSON response
         mock_ai_json = [
@@ -221,7 +202,7 @@ class TestRecommendationEnhancement:
         }
         mock_post.return_value = mock_response
 
-        enhanced = enhance_recommendations(data, calc, user_type="household")
+        enhanced = enhance_recommendations(data, calc)
 
         assert len(enhanced) == len(base_recs)
         # First recommendation title was personalized by AI
@@ -239,7 +220,7 @@ class TestRecommendationEnhancement:
 
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = enhance_recommendations(data, calc, user_type="household")
+        recs = enhance_recommendations(data, calc)
 
         assert len(recs) > 0
         assert all(r["source"] == "rule_based" for r in recs)
@@ -252,7 +233,7 @@ class TestRecommendationEnhancement:
 
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = enhance_recommendations(data, calc, user_type="household")
+        recs = enhance_recommendations(data, calc)
 
         assert len(recs) > 0
         assert all(r["source"] == "rule_based" for r in recs)
@@ -270,7 +251,7 @@ class TestRecommendationEnhancement:
 
         data = sample_household_data()
         calc = calculate_household_consumption(data)
-        recs = enhance_recommendations(data, calc, user_type="household")
+        recs = enhance_recommendations(data, calc)
 
         assert len(recs) > 0
         assert all(r["source"] == "rule_based" for r in recs)
@@ -296,16 +277,14 @@ class TestAIAssistant:
         assert res["source"] == "fallback"
         assert "aerat" in res["response"].lower() or "5 minutes" in res["response"]
 
-    def test_offline_irrigation_advice(self, monkeypatch):
+    def test_offline_household_garden_advice(self, monkeypatch):
         monkeypatch.setenv("AI_API_KEY", "")
         monkeypatch.setenv("GEMINI_API_KEY", "")
 
-        res = chat_with_assistant("What is the best irrigation method for my farm crops?")
+        res = chat_with_assistant("How can I save water when watering my garden plants?")
         assert res["success"] is True
         assert res["source"] == "fallback"
-        assert "drip" in res["response"].lower()
-        # Farming disclaimer should be present
-        assert "agronomic" in res["response"].lower() or "extension" in res["response"].lower()
+        assert "garden" in res["response"].lower()
 
     def test_offline_leak_detection_advice(self, monkeypatch):
         monkeypatch.setenv("AI_API_KEY", "")

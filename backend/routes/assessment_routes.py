@@ -16,14 +16,12 @@ from backend.models import (
     db,
     Assessment,
     HouseholdUsageDetails,
-    FarmerUsageDetails,
     ConsumptionBreakdown,
     Recommendation,
 )
 from backend.utils.validators import validate_assessment
 from backend.services.calculation_service import (
     calculate_household_consumption,
-    calculate_farmer_consumption,
 )
 from backend.services.scoring_service import (
     calculate_water_saver_score,
@@ -50,9 +48,9 @@ def create_assessment():
     """
     data = request.get_json(silent=True) or {}
 
-    # Default assessment_type to user_type if omitted in payload
+    # Household is the only supported assessment type.
     if "assessment_type" not in data or not data["assessment_type"]:
-        data["assessment_type"] = current_user.user_type
+        data["assessment_type"] = "household"
 
     errors = validate_assessment(data)
     if errors:
@@ -69,16 +67,12 @@ def create_assessment():
     assessment_type = data["assessment_type"].strip().lower()
 
     # 1. Deterministic Calculation
-    if assessment_type == "household":
-        calc_results = calculate_household_consumption(data)
-    else:
-        calc_results = calculate_farmer_consumption(data)
+    calc_results = calculate_household_consumption(data)
 
     # 2. Deterministic Water Saver Score
     daily_consumption = calc_results["daily_consumption"]
     score = calculate_water_saver_score(
         daily_consumption=daily_consumption,
-        user_type=assessment_type,
         details=data
     )
 
@@ -86,7 +80,6 @@ def create_assessment():
     base_recs = get_fallback_recommendations(
         assessment_data=data,
         calculation_results=calc_results,
-        user_type=assessment_type
     )
 
     # 4. Atomic Database Transaction
@@ -103,41 +96,24 @@ def create_assessment():
         db.session.add(assessment)
         db.session.flush()  # Allocate assessment.id
 
-        # Add details based on user type
-        if assessment_type == "household":
-            details = HouseholdUsageDetails(
-                assessment_id=assessment.id,
-                household_size=int(float(data.get("household_size", 1))),
-                showers_per_day=float(data.get("showers_per_day", 0.0)),
-                shower_duration_minutes=float(data.get("shower_duration_minutes", 0.0)),
-                toilet_uses_per_day=float(data.get("toilet_uses_per_day", 0.0)),
-                laundry_loads_per_week=float(data.get("laundry_loads_per_week", 0.0)),
-                kitchen_usage_minutes=float(data.get("kitchen_usage_minutes", 0.0)),
-                vehicle_washing_frequency=(
-                    float(data["vehicle_washing_frequency"])
-                    if data.get("vehicle_washing_frequency") not in (None, "") else None
-                ),
-                gardening_frequency=float(data.get("gardening_frequency", 0.0)),
-                gardening_duration_minutes=float(data.get("gardening_duration_minutes", 0.0)),
-                other_usage_litres=float(data.get("other_usage_litres", 0.0)),
-                extended_answers=data.get("extended_answers"),
-            )
-            db.session.add(details)
-        else:
-            details = FarmerUsageDetails(
-                assessment_id=assessment.id,
-                farm_area=float(data.get("farm_area", 0.0)),
-                farm_area_unit=data.get("farm_area_unit", "acre"),
-                crop_type=data.get("crop_type", ""),
-                irrigation_method=data.get("irrigation_method", "flood"),
-                irrigation_frequency=float(data.get("irrigation_frequency", 0.0)),
-                irrigation_duration_minutes=float(data.get("irrigation_duration_minutes", 0.0)),
-                water_source=data.get("water_source", "groundwater"),
-                rainfall_information=data.get("rainfall_information"),
-                rainwater_harvesting=bool(data.get("rainwater_harvesting", False)),
-                estimated_irrigation_litres=float(data.get("estimated_irrigation_litres", 0.0)),
-            )
-            db.session.add(details)
+        details = HouseholdUsageDetails(
+            assessment_id=assessment.id,
+            household_size=int(float(data.get("household_size", 1))),
+            showers_per_day=float(data.get("showers_per_day", 0.0)),
+            shower_duration_minutes=float(data.get("shower_duration_minutes", 0.0)),
+            toilet_uses_per_day=float(data.get("toilet_uses_per_day", 0.0)),
+            laundry_loads_per_week=float(data.get("laundry_loads_per_week", 0.0)),
+            kitchen_usage_minutes=float(data.get("kitchen_usage_minutes", 0.0)),
+            vehicle_washing_frequency=(
+                float(data["vehicle_washing_frequency"])
+                if data.get("vehicle_washing_frequency") not in (None, "") else None
+            ),
+            gardening_frequency=float(data.get("gardening_frequency", 0.0)),
+            gardening_duration_minutes=float(data.get("gardening_duration_minutes", 0.0)),
+            other_usage_litres=float(data.get("other_usage_litres", 0.0)),
+            extended_answers=data.get("extended_answers"),
+        )
+        db.session.add(details)
 
         # Add consumption breakdown
         for item in calc_results.get("breakdown", []):
@@ -152,7 +128,7 @@ def create_assessment():
         # Add baseline recommendations
         for rec in base_recs:
             rec_entry = Recommendation(
-                assessment_id=assessment.id,
+            assessment_id=assessment.id,
                 category=rec["category"],
                 title=rec["title"],
                 description=rec["description"],

@@ -4,7 +4,6 @@ AquaWise Deterministic Scoring & Gamification Service.
 Responsibilities:
 1. Calculate the Water Saver Score (0–100 integer) using pure deterministic rules.
    - Household score applies fixed rules to estimated per-capita use and reported habits.
-   - Farmer score applies fixed rules to reported irrigation practices.
    - The score is strictly reproducible, explainable, and independent of AI.
 2. Manage User Streaks:
    - Tracks consecutive days of water conservation activity.
@@ -48,7 +47,6 @@ def get_score_tier(score: int) -> dict[str, str]:
 
 def calculate_water_saver_score(
     daily_consumption: float,
-    user_type: str = "household",
     details: dict[str, Any] | None = None,
 ) -> int:
     """
@@ -56,97 +54,65 @@ def calculate_water_saver_score(
 
     Parameters:
         daily_consumption: Total estimated daily water use in litres.
-        user_type: "household" or "farmer".
-        details: Optional dictionary of usage inputs (e.g. household_size,
-                 showers_per_day, irrigation_method, etc.) for habit adjustments.
+        details: Optional dictionary of household usage inputs for habit
+                 adjustments.
 
     Returns:
         Integer score between 0 and 100 inclusive.
     """
     details = details or {}
-    user_type_norm = (user_type or "household").strip().lower()
+    # 1. Determine per-capita daily consumption (Litres Per Capita per Day)
+    household_size = max(1, int(float(details.get("household_size", 1))))
+    lpcd = max(0.0, float(daily_consumption) / household_size)
 
-    if user_type_norm == "household":
-        # 1. Determine per-capita daily consumption (Litres Per Capita per Day)
-        household_size = max(1, int(float(details.get("household_size", 1))))
-        lpcd = max(0.0, float(daily_consumption) / household_size)
+    # 2. Base score uses 150 L/person/day as a reference point.
+    # lpcd <= 75  -> base 95-100 (exemplary conservation)
+    # lpcd = 150  -> base 70 (the reference point)
+    # lpcd = 200  -> base 55 (high threshold)
+    # lpcd = 300  -> base 30
+    # lpcd >= 450 -> base 5
+    if lpcd <= 75.0:
+        base_score = 100.0 - (lpcd / 75.0) * 5.0  # 95 to 100
+    elif lpcd <= BENCHMARK_HOUSEHOLD_LPCD:  # 75 to 150
+        ratio = (lpcd - 75.0) / (BENCHMARK_HOUSEHOLD_LPCD - 75.0)
+        base_score = 95.0 - ratio * 25.0  # 70 to 95
+    elif lpcd <= HIGH_CONSUMPTION_THRESHOLD_LPCD:  # 150 to 200
+        ratio = (lpcd - BENCHMARK_HOUSEHOLD_LPCD) / (HIGH_CONSUMPTION_THRESHOLD_LPCD - BENCHMARK_HOUSEHOLD_LPCD)
+        base_score = 70.0 - ratio * 15.0  # 55 to 70
+    elif lpcd <= 300.0:  # 200 to 300
+        ratio = (lpcd - HIGH_CONSUMPTION_THRESHOLD_LPCD) / 100.0
+        base_score = 55.0 - ratio * 25.0  # 30 to 55
+    else:  # > 300
+        excess = min(150.0, lpcd - 300.0)
+        base_score = max(5.0, 30.0 - (excess / 150.0) * 25.0)  # 5 to 30
 
-        # 2. Base score uses 150 L/person/day as a reference point.
-        # lpcd <= 75  -> base 95-100 (exemplary conservation)
-        # lpcd = 150  -> base 70 (the reference point)
-        # lpcd = 200  -> base 55 (high threshold)
-        # lpcd = 300  -> base 30
-        # lpcd >= 450 -> base 5
-        if lpcd <= 75.0:
-            base_score = 100.0 - (lpcd / 75.0) * 5.0  # 95 to 100
-        elif lpcd <= BENCHMARK_HOUSEHOLD_LPCD:  # 75 to 150
-            ratio = (lpcd - 75.0) / (BENCHMARK_HOUSEHOLD_LPCD - 75.0)
-            base_score = 95.0 - ratio * 25.0  # 70 to 95
-        elif lpcd <= HIGH_CONSUMPTION_THRESHOLD_LPCD:  # 150 to 200
-            ratio = (lpcd - BENCHMARK_HOUSEHOLD_LPCD) / (HIGH_CONSUMPTION_THRESHOLD_LPCD - BENCHMARK_HOUSEHOLD_LPCD)
-            base_score = 70.0 - ratio * 15.0  # 55 to 70
-        elif lpcd <= 300.0:  # 200 to 300
-            ratio = (lpcd - HIGH_CONSUMPTION_THRESHOLD_LPCD) / 100.0
-            base_score = 55.0 - ratio * 25.0  # 30 to 55
-        else:  # > 300
-            excess = min(150.0, lpcd - 300.0)
-            base_score = max(5.0, 30.0 - (excess / 150.0) * 25.0)  # 5 to 30
+    # 3. Habit-based adjustments
+    adjustments = 0.0
 
-        # 3. Habit-based adjustments
-        adjustments = 0.0
+    # Short showers bonus / penalty
+    duration = float(details.get("shower_duration_minutes", 0.0))
+    if 0 < duration <= 5.0:
+        adjustments += 4.0
+    elif duration >= 12.0:
+        adjustments -= 5.0
 
-        # Short showers bonus / penalty
-        duration = float(details.get("shower_duration_minutes", 0.0))
-        if 0 < duration <= 5.0:
-            adjustments += 4.0
-        elif duration >= 12.0:
-            adjustments -= 5.0
-
-        # Vehicle washing habits
-        veh_freq_value = details.get("vehicle_washing_frequency")
-        if veh_freq_value is not None and veh_freq_value != "":
-            veh_freq = float(veh_freq_value)
-            if veh_freq == 0:
-                adjustments += 2.0
-            elif veh_freq >= 3.0:
-                adjustments -= 4.0
-
-        # Kitchen efficiency
-        kitchen_mins = float(details.get("kitchen_usage_minutes", 0.0))
-        if 0 < kitchen_mins <= 15.0:
+    # Vehicle washing habits
+    veh_freq_value = details.get("vehicle_washing_frequency")
+    if veh_freq_value is not None and veh_freq_value != "":
+        veh_freq = float(veh_freq_value)
+        if veh_freq == 0:
             adjustments += 2.0
-        elif kitchen_mins >= 45.0:
-            adjustments -= 3.0
+        elif veh_freq >= 3.0:
+            adjustments -= 4.0
 
-        final_score = int(round(base_score + adjustments))
+    # Kitchen efficiency
+    kitchen_mins = float(details.get("kitchen_usage_minutes", 0.0))
+    if 0 < kitchen_mins <= 15.0:
+        adjustments += 2.0
+    elif kitchen_mins >= 45.0:
+        adjustments -= 3.0
 
-    else:
-        # Agricultural / Farmer Scoring
-        method = str(details.get("irrigation_method", "flood")).strip().lower()
-        has_rainwater = bool(details.get("rainwater_harvesting", False))
-        freq = float(details.get("irrigation_frequency", 0.0))
-
-        # Base score from irrigation technology efficiency
-        if method == "drip":
-            base_score = 85.0  # Drip application efficiency > 90%
-        elif method == "sprinkler":
-            base_score = 70.0  # Sprinkler efficiency ~75-80%
-        elif method == "flood":
-            base_score = 45.0  # Flood irrigation loses 40-50%
-        else:
-            base_score = 55.0
-
-        # Rainwater harvesting credit
-        if has_rainwater:
-            base_score += 10.0
-
-        # Moderate frequency bonus
-        if 0 < freq <= 3.0:
-            base_score += 5.0
-        elif freq >= 6.0:
-            base_score -= 5.0
-
-        final_score = int(round(base_score))
+    final_score = int(round(base_score + adjustments))
 
     # Strict clamping between 0 and 100
     return max(0, min(100, final_score))

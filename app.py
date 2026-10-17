@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user, logout_user
 from sqlalchemy import inspect
 from config import config
 from backend.models import db, User, Achievement
@@ -114,6 +114,23 @@ def create_app(config_name=None):
                 "message": "Authentication required. Please log in."
             }
         }), 401
+
+    @app.before_request
+    def restrict_api_to_household_accounts():
+        """End legacy non-household sessions without altering their records."""
+        if (
+            request.path.startswith("/api/")
+            and current_user.is_authenticated
+            and current_user.user_type != "household"
+        ):
+            logout_user()
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "ACCOUNT_TYPE_UNAVAILABLE",
+                    "message": "This legacy account type is no longer supported. Its records have been preserved."
+                }
+            }), 403
 
     # Register Route Blueprints
     app.register_blueprint(auth_bp)

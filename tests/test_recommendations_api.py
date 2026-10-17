@@ -62,7 +62,7 @@ def user_a(app):
 
 @pytest.fixture
 def user_b(app):
-    user = User(name="User B", email="userb@test.com", user_type="farmer")
+    user = User(name="User B", email="userb@test.com", user_type="household")
     user.set_password("Password123!")
     db.session.add(user)
     db.session.flush()
@@ -195,6 +195,19 @@ class TestRecommendationRetrievalAPI:
         assert recs[0]["priority"] == "high"
         assert recs[0]["potential_saving"] == 45.0
         assert recs[0]["source"] == "rule_based"
+
+    def test_recommendation_without_savings_remains_retrievable(self, client, user_a, assessment_with_recs):
+        """Action-only recommendations have no savings estimate and still sort safely."""
+        assessment_with_recs.recommendations[0].potential_saving = None
+        db.session.commit()
+        login(client, user_a.email)
+
+        response = client.get(f"/api/assessments/{assessment_with_recs.id}/recommendations")
+        assert response.status_code == 200
+        items = response.get_json()["data"]["recommendations"]
+        assert len(items) == 2
+        assert items[0]["potential_saving"] == 45.0
+        assert items[1]["potential_saving"] is None
 
     def test_empty_recommendation_result(self, client, user_a, assessment_empty_recs):
         """Assessment with no recommendations returns clean empty list."""

@@ -32,7 +32,7 @@ export default function AppLayout() {
         </AnimatePresence>
         <div className="topbar-account"><span className="topbar-status"><i /> Workspace live</span><NavLink to="/profile" className="account-chip" aria-label="Open profile"><span className="account-avatar">{user?.name?.charAt(0).toUpperCase() || '?'}</span><span className="account-name">{user?.name || 'Account'}</span><Icon name="arrowRight" size={15} /></NavLink><button type="button" className="logout-control" onClick={handleLogout}>Sign out</button></div>
       </header>
-      <div className="workspace-context"><div className="context-breadcrumb"><span>Workspace</span><span className="context-slash">/</span><strong>{title}</strong></div><div className="context-note"><span className="context-dot" />{user?.user_type === 'farmer' ? 'Farm water profile' : 'Household water profile'}</div></div>
+      <div className="workspace-context"><div className="context-breadcrumb"><span>Workspace</span><span className="context-slash">/</span><strong>{title}</strong></div></div>
       <main className="workspace-main"><div className="page-content"><Outlet /></div></main>
       <nav className="mobile-tabbar" aria-label="Mobile navigation">{links.slice(0, 4).map((link) => <NavLink key={link.path} to={link.path} end={link.path === '/dashboard' || link.path === '/recommendations'} className={({ isActive }) => `mobile-tab ${isActive ? 'active' : ''}`}><Icon name={link.icon} size={19} /><span>{link.label === 'Assess water use' ? 'Assess' : link.label === 'Water assistant' ? 'Ask' : link.label}</span></NavLink>)}</nav>
     </div>

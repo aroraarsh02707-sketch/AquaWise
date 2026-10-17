@@ -35,9 +35,10 @@ export function getAssessmentQuality(calculation) {
 }
 
 export function getScorePresentation(assessmentType, calculation) {
-  const description = assessmentType === 'farmer'
-    ? 'Based on irrigation practices reported, not measured water use. It uses reported irrigation method, rainwater harvesting, and irrigation frequency; it does not use the calculated farm volume.'
-    : 'Estimated indicator based on the information you entered. Not a measured or validated assessment.';
+  const isHousehold = assessmentType === 'household';
+  const description = isHousehold
+    ? 'Estimated indicator based on the information you entered. Not a measured or validated assessment.'
+    : 'Saved score from a legacy assessment. Its calculation method is not presented in the current household workspace.';
   const quality = getAssessmentQuality(calculation);
 
   let qualification = '';
@@ -49,9 +50,9 @@ export function getScorePresentation(assessmentType, calculation) {
     qualification = 'Completeness information is not stored for this assessment, so score representativeness is unknown.';
   }
 
-  const scoreMethod = assessmentType === 'farmer'
-    ? ''
-    : 'Household score uses estimated daily use per person, with fixed shower, vehicle-washing, and kitchen adjustments. The 150 L/person/day figure is a reference point.';
+  const scoreMethod = isHousehold
+    ? 'Household score uses estimated daily use per person, with fixed shower, vehicle-washing, and kitchen adjustments. The 150 L/person/day figure is a reference point.'
+    : '';
   const completenessCaveat = quality.hasUnavailableCategories
     ? 'Unavailable categories may be omitted, which can make the score look better than it is.'
     : '';

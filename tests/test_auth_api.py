@@ -56,8 +56,7 @@ class TestRegisterAPI:
         assert me_res.status_code == 200
         assert me_res.get_json()["data"]["user"]["email"] == "sarah@example.com"
 
-    def test_register_farmer_success(self, client):
-        """Test successful registration of a farmer user."""
+    def test_register_farmer_is_rejected(self, client):
         payload = {
             "name": "Kisan Ram",
             "email": "ram@farm.org",
@@ -66,9 +65,19 @@ class TestRegisterAPI:
             "user_type": "farmer",
         }
         res = client.post("/api/auth/register", json=payload)
-        assert res.status_code == 201
-        data = res.get_json()
-        assert data["data"]["user"]["user_type"] == "farmer"
+        assert res.status_code == 400
+        assert res.get_json()["error"]["details"]["user_type"]
+
+    def test_register_without_role_creates_household(self, client):
+        payload = {
+            "name": "Household User",
+            "email": "household@example.com",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+        }
+        response = client.post("/api/auth/register", json=payload)
+        assert response.status_code == 201
+        assert response.get_json()["data"]["user"]["user_type"] == "household"
 
     def test_register_duplicate_email_conflict(self, client):
         """Registering with an existing email returns 409 Conflict."""
@@ -173,6 +182,33 @@ class TestLoginAPI:
         assert res.status_code == 400
         data = res.get_json()
         assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_legacy_farmer_account_cannot_open_workspace(self, app, client):
+        user = User(name="Legacy User", email="legacy@example.com", user_type="farmer")
+        user.set_password("CorrectPassword123")
+        db.session.add(user)
+        db.session.commit()
+        response = client.post("/api/auth/login", json={
+            "email": user.email,
+            "password": "CorrectPassword123",
+        })
+        assert response.status_code == 403
+        assert response.get_json()["error"]["code"] == "ACCOUNT_TYPE_UNAVAILABLE"
+        assert client.get("/api/auth/me").status_code == 401
+
+    def test_existing_legacy_session_is_logged_out_from_api(self, app, client):
+        user = User(name="Legacy Session", email="legacy-session@example.com", user_type="farmer")
+        user.set_password("CorrectPassword123")
+        db.session.add(user)
+        db.session.commit()
+        with client.session_transaction() as session:
+            session["_user_id"] = str(user.id)
+            session["_fresh"] = True
+
+        response = client.get("/api/auth/me")
+        assert response.status_code == 403
+        assert response.get_json()["error"]["code"] == "ACCOUNT_TYPE_UNAVAILABLE"
+        assert client.get("/api/auth/me").status_code == 401
 
 
 class TestMeAndLogoutAPI:

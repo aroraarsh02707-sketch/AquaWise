@@ -54,7 +54,7 @@ def get_dashboard():
     top_category = category_breakdown[0]["category"] if category_breakdown else None
 
     recs_list = [r.to_dict() for r in latest_assessment.recommendations]
-    recs_list.sort(key=lambda r: float(r.get("potential_saving", 0.0)), reverse=True)
+    recs_list.sort(key=lambda r: float(r.get("potential_saving") or 0.0), reverse=True)
 
     return jsonify({
         "success": True,

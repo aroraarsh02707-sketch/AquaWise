@@ -31,7 +31,6 @@ def _get_user_context(user_id):
         .first()
         
     return {
-        "user_type": latest_assessment.assessment_type,
         "daily_consumption": round(latest_assessment.daily_consumption, 1),
         "water_saver_score": latest_assessment.water_saver_score,
         "top_category": top_breakdown.category if top_breakdown else None

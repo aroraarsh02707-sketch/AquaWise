@@ -61,7 +61,7 @@ function AssessmentContext({ assessment }) {
       <div className="recommendation-context-date">
         <Icon name="assessment" size={18} />
         <span>
-          <strong>{assessment.assessment_type === 'farmer' ? 'Farm' : 'Household'} assessment</strong>
+          <strong>{assessment.assessment_type === 'household' ? 'Household assessment' : 'Archived assessment'}</strong>
           {formatDate(assessment.assessment_date) && <small>{formatDate(assessment.assessment_date)}</small>}
         </span>
       </div>

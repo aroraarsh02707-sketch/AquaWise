@@ -24,7 +24,6 @@ from backend.models import (
     User,
     Assessment,
     HouseholdUsageDetails,
-    FarmerUsageDetails,
     ConsumptionBreakdown,
     Recommendation,
     Streak,
@@ -65,8 +64,8 @@ def user_a(app):
 
 @pytest.fixture
 def user_b(app):
-    """Secondary farmer user for isolation checks."""
-    user = User(name="Bob Farmer", email="bob@test.com", user_type="farmer")
+    """Secondary household user for isolation checks."""
+    user = User(name="Bob Household", email="bob@test.com", user_type="household")
     user.set_password("Password123!")
     db.session.add(user)
     db.session.flush()
@@ -170,43 +169,70 @@ class TestCreateAssessmentAPI:
         score = response.get_json()["data"]["water_saver_score"]
         no_vehicle_bonus = calculate_water_saver_score(
             response.get_json()["data"]["daily_consumption"],
-            "household",
             {"household_size": 1, "shower_duration_minutes": 5, "vehicle_washing_frequency": None, "kitchen_usage_minutes": 10},
         )
         assert score == no_vehicle_bonus
         assert score < calculate_water_saver_score(
             response.get_json()["data"]["daily_consumption"],
-            "household",
             {"household_size": 1, "shower_duration_minutes": 5, "vehicle_washing_frequency": 0, "kitchen_usage_minutes": 10},
         )
 
-    def test_create_farmer_assessment_success(self, client, user_b):
-        """Valid agricultural assessment calculates and persists with farmer details."""
-        login_client(client, user_b.email)
-
+    def test_v2_submission_with_partial_laundry_and_form_numeric_strings(self, client, user_a):
+        login_client(client, user_a.email)
         payload = {
-            "assessment_type": "farmer",
-            "farm_area": 4.0,
-            "farm_area_unit": "acre",
-            "crop_type": "wheat",
-            "irrigation_method": "drip",
-            "irrigation_frequency": 3,
-            "irrigation_duration_minutes": 60,
-            "water_source": "canal",
-            "rainwater_harvesting": True,
-            "estimated_irrigation_litres": 1500.0,
+            "assessment_type": "household",
+            "assessment_version": 2,
+            "household_size": 10,
+            "showers_per_day": 1,
+            "shower_duration_minutes": 10,
+            "toilet_uses_per_day": 5,
+            "laundry_loads_per_week": 2,
+            "kitchen_usage_minutes": 35,
+            "vehicle_washing_frequency": None,
+            "gardening_frequency": 0,
+            "extended_answers": {
+                "water_sources": ["municipal", "borewell"],
+                "conservation_measures": [],
+                "bathing_method": "shower",
+                "showers_per_person_per_day": "1",
+                "shower_duration_minutes": "10",
+                "toilet_flushes_per_person_per_day": "5",
+                "toilet_type": "standard",
+                "bathroom_tap_minutes_per_person_per_day": "35",
+                "tap_off_while_brushing": False,
+                "kitchen_tap_minutes_per_day": "35",
+                "kitchen_tap_runs_while_washing": False,
+                "dishwashing_method": "basin",
+                "dishwashing_litres_per_day": "0",
+                "has_dishwasher": True,
+                "dishwasher_cycles_per_week": "16",
+                "laundry_loads_per_week": "2",
+                "laundry_method": "front_load",
+                "laundry_full_loads": False,
+                "cleaning_method": "bucket_mop",
+                "cleaning_sessions_per_week": "8",
+                "has_garden": True,
+                "garden_sessions_per_week": "9",
+                "garden_method": "watering_can",
+                "leak_status": None,
+            },
         }
-        res = client.post("/api/assessments", json=payload)
-        assert res.status_code == 201
 
-        data = res.get_json()
-        assert data["success"] is True
-        assessment = data["data"]
-        assert assessment["user_id"] == user_b.id
-        assert assessment["assessment_type"] == "farmer"
-        assert assessment["details"]["crop_type"] == "wheat"
-        assert assessment["details"]["irrigation_method"] == "drip"
-        assert assessment["details"]["rainwater_harvesting"] is True
+        response = client.post("/api/assessments", json=payload)
+
+        assert response.status_code == 201
+        recommendations = response.get_json()["data"]["recommendations"]
+        assert any(item["title"] == "Combine partial laundry loads" for item in recommendations)
+
+    def test_farmer_assessment_type_is_rejected(self, client, user_a):
+        login_client(client, user_a.email)
+        response = client.post("/api/assessments", json={
+            "assessment_type": "farmer",
+            "farm_area": 4,
+            "irrigation_method": "drip",
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error"]["details"]["assessment_type"]
 
     def test_create_assessment_validation_failure(self, client, user_a):
         """Invalid inputs return 400 with VALIDATION_ERROR."""
@@ -257,13 +283,13 @@ class TestAssessmentHistoryAPI:
         # Create assessment for user_b
         login_client(client, user_b.email)
         client.post("/api/assessments", json={
-            "assessment_type": "farmer",
-            "farm_area": 2.0,
-            "farm_area_unit": "acre",
-            "crop_type": "corn",
-            "irrigation_method": "flood",
-            "irrigation_frequency": 2,
-            "irrigation_duration_minutes": 60,
+            "assessment_type": "household",
+            "household_size": 1,
+            "showers_per_day": 1,
+            "shower_duration_minutes": 5,
+            "toilet_uses_per_day": 4,
+            "laundry_loads_per_week": 2,
+            "kitchen_usage_minutes": 15,
         })
 
         # User A's history must show exactly 1 assessment, belonging to user_a

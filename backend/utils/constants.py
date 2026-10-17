@@ -1,8 +1,8 @@
 """
 AquaWise Water-Use Assumptions.
 
-All values here are ESTIMATES based on commonly cited household and agricultural
-water-use data. They do NOT represent exact measurements for every situation.
+All values here are ESTIMATES based on commonly cited household water-use data.
+They do NOT represent exact measurements for every situation.
 
 These constants are deliberately centralised so the development team can update
 them in one place if better reference data becomes available.  The application
@@ -12,7 +12,6 @@ always use phrasing such as "estimated based on typical usage assumptions".
 Sources consulted for the initial values:
   - World Health Organisation drinking-water guidelines
   - Bureau of Indian Standards domestic water requirements
-  - Central Ground Water Board irrigation benchmarks (India)
   - Generic plumbing flow-rate data (standard residential fittings)
 
 Assumptions are grouped by category and annotated with their unit and rationale.
@@ -97,37 +96,6 @@ GARDENING_BUCKET_FLOW_RATE_LPM = 8.0       # litres per minute (effective rate)
 
 # Default when method is unspecified.
 GARDENING_DEFAULT_FLOW_RATE_LPM = 12.0     # litres per minute
-
-# ---------------------------------------------------------------------------
-# AGRICULTURAL IRRIGATION
-# ---------------------------------------------------------------------------
-
-# Conversion: 1 acre = 0.404686 hectares.
-ACRES_TO_HECTARES = 0.404686
-
-# Estimated water delivery rate in LITRES PER HECTARE PER HOUR for each
-# irrigation method.  These are mid-range values based on Central Ground Water
-# Board and FAO irrigation efficiency benchmarks for South Asia.
-#
-# Flood irrigation:    high volume, low efficiency (60–65 % field efficiency).
-#   Typical gross application: 3000–4500 L/hr/ha.  We use 3800.
-#
-# Drip irrigation:     very efficient (90 %+ field efficiency).
-#   Typical gross application: 400–900 L/hr/ha.  We use 650.
-#
-# Sprinkler irrigation: moderate efficiency (75–85 %).
-#   Typical gross application: 1200–1800 L/hr/ha.  We use 1500.
-#
-# Other / unknown:     we use a conservative mid-range estimate.
-IRRIGATION_RATE_L_PER_HA_PER_HOUR = {
-    "flood":      3800.0,
-    "drip":        650.0,
-    "sprinkler":  1500.0,
-    "other":      2000.0,
-}
-
-# Fallback rate when irrigation method is not matched.
-IRRIGATION_RATE_DEFAULT = 2000.0    # litres per hectare per hour
 
 # ---------------------------------------------------------------------------
 # REFERENCE POINT: DAILY PER-CAPITA WATER USE

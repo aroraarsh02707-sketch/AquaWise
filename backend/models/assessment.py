@@ -13,7 +13,8 @@ class Assessment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    assessment_type = db.Column(db.String(20), nullable=False)  # "household" or "farmer"
+    # Historical values are retained so older assessment records remain intact.
+    assessment_type = db.Column(db.String(20), nullable=False)
     assessment_date = db.Column(db.DateTime, default=utc_now, nullable=False, index=True)
     daily_consumption = db.Column(db.Float, nullable=False)       # litres / day
     weekly_consumption = db.Column(db.Float, nullable=False)      # litres / week

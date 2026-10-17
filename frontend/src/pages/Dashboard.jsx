@@ -46,7 +46,7 @@ function recommendationIcon(category = '') {
   if (/toilet|flush/.test(value)) return 'toilet';
   if (/leak|repair/.test(value)) return 'leak';
   if (/kitchen|dish/.test(value)) return 'kitchen';
-  if (/garden|irrigat|farm|outdoor/.test(value)) return 'leaf';
+  if (/garden|irrigat|outdoor/.test(value)) return 'leaf';
   return 'water';
 }
 
@@ -135,7 +135,7 @@ export default function Dashboard() {
   return <motion.div className="dashboard-page" {...appear}>
     <PageHeading eyebrow="WATER USE / OVERVIEW" title={`Your water, in focus, ${firstName}.`} description="A clear snapshot of your latest estimate and practical ways to conserve." action={<Link to="/assessment" className="button button-primary"><Icon name="assessment" size={17} />{hasData ? 'New assessment' : 'Start assessment'}<Icon name="arrowRight" size={16} /></Link>} />
     {!hasData ? <section className="welcome-feature">
-      <div className="welcome-copy"><span className="eyebrow">YOUR BASELINE STARTS HERE</span><h2>Understand where your water goes.</h2><p>AquaWise turns a few details about your household or farm into a useful water-use estimate and actions you can take next.</p><Link className="button button-primary" to="/assessment">Build your first water profile <Icon name="arrowRight" size={17} /></Link></div>
+      <div className="welcome-copy"><span className="eyebrow">YOUR BASELINE STARTS HERE</span><h2>Understand where your water goes.</h2><p>AquaWise turns a few details about your household into a useful water-use estimate and actions you can take next.</p><Link className="button button-primary" to="/assessment">Build your first water profile <Icon name="arrowRight" size={17} /></Link></div>
       <div className="water-orbit" aria-hidden="true"><span className="orbit orbit-one" /><span className="orbit orbit-two" /><span className="orbit-center"><Icon name="water" size={36} /></span><b>Measure</b><b>Understand</b><b>Conserve</b></div>
     </section> : <>
       <WaterComposition categories={categories} dailyTotal={Number(data.latest_daily_consumption) || 0} />

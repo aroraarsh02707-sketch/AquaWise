@@ -6,7 +6,7 @@ import Icon from '../components/Icon';
 import AuthAside from '../components/AuthAside';
 
 function Register() {
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirm_password: '', user_type: 'household' });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirm_password: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
@@ -60,14 +60,6 @@ function Register() {
             <div className="form-group">
               <label htmlFor="email">Email address</label>
               <input id="email" name="email" type="email" autoComplete="email" value={formData.email} onChange={handleChange} placeholder="name@example.com" maxLength={120} required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'register-error' : undefined} />
-            </div>
-            <div className="form-group">
-              <label htmlFor="user_type">Account type</label>
-              <select id="user_type" name="user_type" value={formData.user_type} onChange={handleChange} disabled={isSubmitting}>
-                <option value="household">Household</option>
-                <option value="farmer">Farmer</option>
-              </select>
-              <span className="auth-field-note">This helps tailor your assessment to your water use.</span>
             </div>
             <div className="auth-password-grid">
               <div className="form-group">

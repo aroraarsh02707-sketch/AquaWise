@@ -46,7 +46,7 @@ def user_a(app):
 
 @pytest.fixture
 def user_b(app):
-    user = User(name="User B", email="userb@test.com", user_type="farmer")
+    user = User(name="User B", email="userb@test.com", user_type="household")
     user.set_password("Password123!")
     db.session.add(user)
     db.session.commit()
@@ -108,22 +108,19 @@ class TestProfileAPI:
 
     def test_update_profile_valid(self, client, user_a):
         login(client, user_a.email)
-        res = client.put("/api/profile", json={
-            "name": "Updated Name",
-            "user_type": "farmer"
-        })
+        res = client.put("/api/profile", json={"name": "Updated Name"})
         assert res.status_code == 200
         data = res.get_json()
         assert data["success"] is True
         
         profile = data["data"]["profile"]
         assert profile["name"] == "Updated Name"
-        assert profile["user_type"] == "farmer"
+        assert profile["user_type"] == "household"
         
         # Verify in DB
         db_user = db.session.get(User, user_a.id)
         assert db_user.name == "Updated Name"
-        assert db_user.user_type == "farmer"
+        assert db_user.user_type == "household"
 
     def test_update_profile_invalid(self, client, user_a):
         login(client, user_a.email)

@@ -121,8 +121,8 @@ def test_household_assessment_and_relationships(session):
     assert len(d["breakdown"]) == 2
     assert len(d["recommendations"]) == 1
 
-def test_farmer_assessment_and_details(session):
-    """Test Assessment with FarmerUsageDetails."""
+def test_legacy_assessment_details_are_preserved(session):
+    """Legacy usage rows remain mapped and serializable without a migration."""
     user = User(name="Farmer Dave", email="dave@farm.com", user_type="farmer")
     user.set_password("SecureFarmPass")
     session.add(user)

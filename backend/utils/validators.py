@@ -17,17 +17,7 @@ import re
 # Allowed enum values (single source of truth for valid option strings)
 # ---------------------------------------------------------------------------
 
-VALID_USER_TYPES = {"household", "farmer"}
-
-VALID_IRRIGATION_METHODS = {"flood", "drip", "sprinkler", "other"}
-
-VALID_WATER_SOURCES = {"groundwater", "canal", "rainwater", "tank", "other"}
-
-VALID_FARM_AREA_UNITS = {"acre", "hectare"}
-
-VALID_CROP_TYPES = {
-    "wheat", "rice", "maize", "vegetables", "pulses", "fruits", "other"
-}
+VALID_USER_TYPES = {"household"}
 
 VALID_ROLES = {"user", "assistant"}
 
@@ -78,7 +68,8 @@ def validate_registration(data: dict) -> dict:
     """
     Validate user registration payload.
 
-    Expected keys: name, email, password, confirm_password, user_type.
+    Expected keys: name, email, password, confirm_password. Account type is
+    fixed to household; an explicit non-household type is rejected.
     Returns: dict of field -> error message (empty if valid).
     """
     errors = {}
@@ -109,11 +100,9 @@ def validate_registration(data: dict) -> dict:
     if not errors.get("password") and password != confirm_password:
         errors["confirm_password"] = "Passwords do not match."
 
-    user_type = (data.get("user_type") or "").strip().lower()
-    if not user_type:
-        errors["user_type"] = "User type is required."
-    elif user_type not in VALID_USER_TYPES:
-        errors["user_type"] = "User type must be 'household' or 'farmer'."
+    user_type = (data.get("user_type") or "household").strip().lower()
+    if user_type not in VALID_USER_TYPES:
+        errors["user_type"] = "Only household accounts are supported."
 
     return errors
 
@@ -283,68 +272,12 @@ def _num_for_validation(value):
 
 
 # ---------------------------------------------------------------------------
-# Farmer assessment validator
-# ---------------------------------------------------------------------------
-
-def validate_farmer_assessment(data: dict) -> dict:
-    """
-    Validate a farmer / agricultural assessment payload.
-
-    Rules (from TRD Section 30 and PRD Sections 8, 29):
-      - farm_area: float > 0 and <= 10,000 (acres or hectares)
-      - farm_area_unit: must be 'acre' or 'hectare'
-      - crop_type: required string, <= 100 characters
-      - irrigation_method: one of flood / drip / sprinkler / other
-      - irrigation_frequency: float >= 0 and <= 30 (sessions per week)
-      - irrigation_duration_minutes: float >= 0 and <= 1440 (max 24 h per session)
-      - water_source: one of the allowed sources
-      - estimated_irrigation_litres: float >= 0 (optional override; 0 means unknown)
-    """
-    errors = {}
-
-    numeric_rules = [
-        ("farm_area",                  0.001, 10000, True,  "Farm area"),
-        ("irrigation_frequency",       0,       30,  False, "Irrigation sessions per week"),
-        ("irrigation_duration_minutes",0,     1440,  False, "Irrigation duration (minutes)"),
-        ("estimated_irrigation_litres",0,  1_000_000, False, "Estimated irrigation volume (litres)"),
-    ]
-    _clamp_errors(errors, data, numeric_rules)
-
-    farm_area_unit = (data.get("farm_area_unit") or "acre").strip().lower()
-    if farm_area_unit not in VALID_FARM_AREA_UNITS:
-        errors["farm_area_unit"] = "Farm area unit must be 'acre' or 'hectare'."
-
-    crop_type = (data.get("crop_type") or "").strip()
-    if not crop_type:
-        errors["crop_type"] = "Crop type is required."
-    elif len(crop_type) > 100:
-        errors["crop_type"] = "Crop type must not exceed 100 characters."
-
-    irrigation_method = (data.get("irrigation_method") or "").strip().lower()
-    if not irrigation_method:
-        errors["irrigation_method"] = "Irrigation method is required."
-    elif irrigation_method not in VALID_IRRIGATION_METHODS:
-        errors["irrigation_method"] = (
-            "Irrigation method must be one of: flood, drip, sprinkler, other."
-        )
-
-    water_source = (data.get("water_source") or "").strip().lower()
-    if water_source and water_source not in VALID_WATER_SOURCES:
-        errors["water_source"] = (
-            "Water source must be one of: groundwater, canal, rainwater, tank, other."
-        )
-
-    return errors
-
-
-# ---------------------------------------------------------------------------
-# Generic assessment router
+# Household assessment router
 # ---------------------------------------------------------------------------
 
 def validate_assessment(data: dict) -> dict:
     """
-    Dispatch validation based on assessment_type in `data`.
-    Always validates assessment_type is present and valid first.
+    Validate household assessment input. Reject unsupported legacy types.
     """
     errors = {}
 
@@ -353,12 +286,6 @@ def validate_assessment(data: dict) -> dict:
         errors["assessment_type"] = "Assessment type is required."
         return errors
     if assessment_type not in VALID_USER_TYPES:
-        errors["assessment_type"] = "Assessment type must be 'household' or 'farmer'."
+        errors["assessment_type"] = "Only household assessments are supported."
         return errors
-
-    if assessment_type == "household":
-        errors.update(validate_household_assessment(data))
-    else:
-        errors.update(validate_farmer_assessment(data))
-
-    return errors
+    return validate_household_assessment(data)

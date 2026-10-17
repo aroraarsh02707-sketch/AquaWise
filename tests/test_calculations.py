@@ -9,13 +9,11 @@ rounding in the calculation engine.
 import pytest
 from backend.services.calculation_service import (
     calculate_household_consumption,
-    calculate_farmer_consumption,
 )
 from backend.utils.validators import (
     validate_registration,
     validate_login,
     validate_household_assessment,
-    validate_farmer_assessment,
     validate_assessment,
 )
 from backend.utils import constants as C
@@ -56,23 +54,6 @@ def full_household():
     }
 
 
-@pytest.fixture
-def minimal_farmer():
-    """Smallest valid farmer payload using a user-provided estimate."""
-    return {
-        "farm_area": 2.0,
-        "farm_area_unit": "acre",
-        "crop_type": "wheat",
-        "irrigation_method": "drip",
-        "irrigation_frequency": 3,           # 3 sessions/week
-        "irrigation_duration_minutes": 60,
-        "water_source": "groundwater",
-        "estimated_irrigation_litres": 2000, # user-provided: 2000 L per session
-        "rainwater_harvesting": False,
-    }
-
-
-# ===========================================================================
 # Calculation tests — Household
 # ===========================================================================
 
@@ -328,127 +309,6 @@ class TestHouseholdAssessmentV2Calculation:
 
 
 # ===========================================================================
-# Calculation tests — Farmer
-# ===========================================================================
-
-class TestFarmerCalculation:
-
-    def test_returns_required_keys(self, minimal_farmer):
-        result = calculate_farmer_consumption(minimal_farmer)
-        assert "daily_consumption" in result
-        assert "weekly_consumption" in result
-        assert "monthly_consumption" in result
-        assert "breakdown" in result
-
-    def test_weekly_is_seven_times_daily(self, minimal_farmer):
-        result = calculate_farmer_consumption(minimal_farmer)
-        expected = round(result["daily_consumption"] * 7, 2)
-        assert result["weekly_consumption"] == expected
-
-    def test_monthly_is_thirty_times_daily(self, minimal_farmer):
-        result = calculate_farmer_consumption(minimal_farmer)
-        expected = round(result["daily_consumption"] * 30, 2)
-        assert result["monthly_consumption"] == expected
-
-    def test_user_estimate_used_when_provided(self, minimal_farmer):
-        """
-        When estimated_irrigation_litres=2000 and frequency=3/week:
-          daily = (2000 × 3) / 7 ≈ 857.14 L/day
-        """
-        result = calculate_farmer_consumption(minimal_farmer)
-        expected_daily = (2000 * 3) / 7
-        assert abs(result["daily_consumption"] - expected_daily) < 1.0
-
-    def test_model_estimate_used_when_no_user_estimate(self):
-        """
-        Without a user estimate, use area × duration × method rate.
-        1 acre = 0.404686 ha; drip rate = 650 L/ha/hr; 1 hr duration; 2/week.
-          litres_per_session = 0.404686 × 1.0 × 650 = 263.05
-          daily = (263.05 × 2) / 7 ≈ 75.16 L/day
-        """
-        data = {
-            "farm_area": 1.0,
-            "farm_area_unit": "acre",
-            "crop_type": "vegetables",
-            "irrigation_method": "drip",
-            "irrigation_frequency": 2,
-            "irrigation_duration_minutes": 60,   # 1 hour
-            "water_source": "groundwater",
-            "estimated_irrigation_litres": 0,     # no user estimate
-            "rainwater_harvesting": False,
-        }
-        result = calculate_farmer_consumption(data)
-        area_ha = 1.0 * C.ACRES_TO_HECTARES
-        rate = C.IRRIGATION_RATE_L_PER_HA_PER_HOUR["drip"]
-        expected_per_session = area_ha * 1.0 * rate
-        expected_daily = (expected_per_session * 2) / 7
-        assert abs(result["daily_consumption"] - expected_daily) < 1.0
-
-    def test_rainwater_flag_does_not_apply_unmeasured_volume_credit(self):
-        """A yes/no collection flag cannot justify a fixed percentage deduction."""
-        data = {
-            "farm_area": 2.0,
-            "farm_area_unit": "acre",
-            "crop_type": "rice",
-            "irrigation_method": "flood",
-            "irrigation_frequency": 3,
-            "irrigation_duration_minutes": 60,
-            "water_source": "canal",
-            "estimated_irrigation_litres": 0,
-            "rainwater_harvesting": False,
-        }
-        without_flag = calculate_farmer_consumption(data)
-        with_flag = calculate_farmer_consumption(dict(data, rainwater_harvesting=True))
-        assert with_flag["daily_consumption"] == without_flag["daily_consumption"]
-        assert "no volume credit was applied" in with_flag["calculation_note"]
-
-    def test_zero_frequency_gives_zero_daily(self):
-        """If irrigation_frequency is 0, daily consumption must be 0."""
-        data = {
-            "farm_area": 5.0,
-            "farm_area_unit": "hectare",
-            "crop_type": "maize",
-            "irrigation_method": "sprinkler",
-            "irrigation_frequency": 0,
-            "irrigation_duration_minutes": 60,
-            "water_source": "groundwater",
-            "estimated_irrigation_litres": 0,
-            "rainwater_harvesting": False,
-        }
-        result = calculate_farmer_consumption(data)
-        assert result["daily_consumption"] == 0.0
-
-    def test_hectare_unit_uses_area_directly(self):
-        """
-        A 1-hectare farm should give a higher result than a 1-acre farm
-        (1 hectare ≈ 2.47 acres).
-        """
-        acre_data = {
-            "farm_area": 1.0,
-            "farm_area_unit": "acre",
-            "crop_type": "wheat",
-            "irrigation_method": "sprinkler",
-            "irrigation_frequency": 3,
-            "irrigation_duration_minutes": 60,
-            "water_source": "groundwater",
-            "estimated_irrigation_litres": 0,
-            "rainwater_harvesting": False,
-        }
-        hectare_data = dict(acre_data, farm_area_unit="hectare")
-
-        r_acre    = calculate_farmer_consumption(acre_data)
-        r_hectare = calculate_farmer_consumption(hectare_data)
-
-        assert r_hectare["daily_consumption"] > r_acre["daily_consumption"]
-
-    def test_calculation_note_present(self, minimal_farmer):
-        """Result should contain a 'calculation_note' describing the method used."""
-        result = calculate_farmer_consumption(minimal_farmer)
-        assert "calculation_note" in result
-        assert len(result["calculation_note"]) > 0
-
-
-# ===========================================================================
 # Validator tests — Registration
 # ===========================================================================
 
@@ -491,8 +351,12 @@ class TestRegistrationValidation:
         errors = validate_registration(data)
         assert "user_type" in errors
 
-    def test_valid_farmer_type(self):
+    def test_farmer_registration_type_is_rejected(self):
         data = self._valid(); data["user_type"] = "farmer"
+        assert "user_type" in validate_registration(data)
+
+    def test_registration_defaults_to_household(self):
+        data = self._valid(); data.pop("user_type")
         assert validate_registration(data) == {}
 
 
@@ -577,73 +441,6 @@ class TestHouseholdValidation:
 
 
 # ===========================================================================
-# Validator tests — Farmer Assessment
-# ===========================================================================
-
-class TestFarmerValidation:
-
-    def _valid(self):
-        return {
-            "farm_area": 5.0,
-            "farm_area_unit": "acre",
-            "crop_type": "rice",
-            "irrigation_method": "drip",
-            "irrigation_frequency": 3,
-            "irrigation_duration_minutes": 60,
-            "water_source": "canal",
-            "estimated_irrigation_litres": 0,
-            "rainwater_harvesting": False,
-        }
-
-    def test_valid_payload_returns_no_errors(self):
-        assert validate_farmer_assessment(self._valid()) == {}
-
-    def test_non_finite_farmer_volume_rejected(self):
-        data = self._valid(); data["estimated_irrigation_litres"] = float("nan")
-        assert "estimated_irrigation_litres" in validate_farmer_assessment(data)
-
-    def test_zero_farm_area_rejected(self):
-        data = self._valid(); data["farm_area"] = 0
-        errors = validate_farmer_assessment(data)
-        assert "farm_area" in errors
-
-    def test_negative_farm_area_rejected(self):
-        data = self._valid(); data["farm_area"] = -2
-        errors = validate_farmer_assessment(data)
-        assert "farm_area" in errors
-
-    def test_invalid_irrigation_method_rejected(self):
-        data = self._valid(); data["irrigation_method"] = "laser"
-        errors = validate_farmer_assessment(data)
-        assert "irrigation_method" in errors
-
-    def test_all_valid_irrigation_methods_accepted(self):
-        for method in ["flood", "drip", "sprinkler", "other"]:
-            data = self._valid(); data["irrigation_method"] = method
-            errors = validate_farmer_assessment(data)
-            assert "irrigation_method" not in errors, f"Method '{method}' incorrectly rejected"
-
-    def test_invalid_water_source_rejected(self):
-        data = self._valid(); data["water_source"] = "magic_spring"
-        errors = validate_farmer_assessment(data)
-        assert "water_source" in errors
-
-    def test_missing_crop_type_rejected(self):
-        data = self._valid(); data["crop_type"] = ""
-        errors = validate_farmer_assessment(data)
-        assert "crop_type" in errors
-
-    def test_hectare_unit_accepted(self):
-        data = self._valid(); data["farm_area_unit"] = "hectare"
-        assert validate_farmer_assessment(data) == {}
-
-    def test_invalid_area_unit_rejected(self):
-        data = self._valid(); data["farm_area_unit"] = "square_feet"
-        errors = validate_farmer_assessment(data)
-        assert "farm_area_unit" in errors
-
-
-# ===========================================================================
 # Validator tests — Generic assessment dispatch
 # ===========================================================================
 
@@ -670,12 +467,6 @@ class TestAssessmentDispatch:
         errors = validate_assessment(data)
         assert "household_size" in errors
 
-    def test_dispatches_to_farmer(self):
-        data = {
-            "assessment_type": "farmer",
-            "farm_area": 0,         # invalid
-            "crop_type": "wheat",
-            "irrigation_method": "drip",
-        }
-        errors = validate_assessment(data)
-        assert "farm_area" in errors
+    def test_legacy_farmer_assessment_type_is_rejected(self):
+        errors = validate_assessment({"assessment_type": "farmer"})
+        assert "assessment_type" in errors

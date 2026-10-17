@@ -40,7 +40,6 @@ function Profile() {
   const [profileError, setProfileError] = useState('');
   const [achievementsError, setAchievementsError] = useState('');
   const [formName, setFormName] = useState('');
-  const [formUserType, setFormUserType] = useState('household');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -55,7 +54,6 @@ function Profile() {
       if (!response?.data?.success || !data) throw new Error('Profile is unavailable.');
       setProfile(data);
       setFormName(data.name || '');
-      setFormUserType(data.user_type === 'farmer' ? 'farmer' : 'household');
     } catch {
       setProfileError('Your profile could not be loaded. Please try again.');
     } finally {
@@ -90,12 +88,11 @@ function Profile() {
     setSaveSuccess(false);
     setSaving(true);
     try {
-      const response = await profileService.updateProfile({ name: formName, user_type: formUserType });
+      const response = await profileService.updateProfile({ name: formName });
       if (!response?.data?.success || !response.data.data?.profile) throw new Error('Profile could not be saved.');
       const updatedProfile = response.data.data.profile;
       setProfile((previous) => ({ ...previous, ...updatedProfile }));
       setFormName(updatedProfile.name || formName);
-      setFormUserType(updatedProfile.user_type === 'farmer' ? 'farmer' : 'household');
       setSaveSuccess(true);
     } catch (error) {
       const details = error.response?.data?.error?.details;
@@ -109,7 +106,7 @@ function Profile() {
   const badges = Array.isArray(profile?.badges) ? profile.badges : [];
   const unlockedCount = achievements.filter((item) => item?.unlocked === true).length;
   const initials = (profile?.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-  const accountType = profile?.user_type === 'farmer' ? 'Farmer' : 'Household';
+  const accountType = 'Household';
 
   return (
     <motion.main className="profile-page rebuilt-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
@@ -122,7 +119,7 @@ function Profile() {
           <>
             <div className="profile-avatar" aria-hidden="true">{initials || <Icon name="profile" size={30} />}</div>
             <div className="profile-identity-copy"><span className="profile-eyebrow">{accountType.toUpperCase()} ACCOUNT</span><h2 id="profile-identity-heading">{profile.name}</h2><p>{profile.email}</p></div>
-            <span className="profile-type-label"><Icon name={profile.user_type === 'farmer' ? 'assessment' : 'water'} size={17} />{accountType}</span>
+            <span className="profile-type-label"><Icon name="water" size={17} />{accountType}</span>
           </>
         )}
       </section>
@@ -133,7 +130,6 @@ function Profile() {
           <div className="profile-form-grid">
             <div className="form-group"><label htmlFor="prof-name">Display name</label><input id="prof-name" type="text" autoComplete="name" value={formName} onChange={(event) => { setFormName(event.target.value); setSaveSuccess(false); }} maxLength={100} required disabled={saving} /><span className="profile-field-note">This is the name shown on your account.</span></div>
             <div className="form-group"><label htmlFor="prof-email">Email address <span>Read only</span></label><input id="prof-email" type="email" value={profile.email || ''} readOnly aria-readonly="true" /><span className="profile-field-note">Email changes are not available here.</span></div>
-            <div className="form-group profile-account-type-field"><label htmlFor="prof-type">Account type</label><select id="prof-type" value={formUserType} onChange={(event) => { setFormUserType(event.target.value); setSaveSuccess(false); }} disabled={saving}><option value="household">Household</option><option value="farmer">Farmer</option></select><span className="profile-field-note">Choose the profile that best describes your water use.</span></div>
           </div>
           <div className="profile-save-row">
             <div className="profile-save-feedback" aria-live="polite">{saveError && <span className="profile-save-error" role="alert"><Icon name="warning" size={17} />{saveError}</span>}{saveSuccess && <span className="profile-save-success" role="status"><span aria-hidden="true">✓</span> Your profile has been saved.</span>}</div>
