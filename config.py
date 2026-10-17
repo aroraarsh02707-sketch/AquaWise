@@ -14,7 +14,16 @@ if os.path.exists(env_path):
 class BaseConfig:
     """Base configuration with shared defaults."""
     APP_NAME = "AquaWise"
-    SECRET_KEY = os.environ.get("SECRET_KEY", "aquawise-dev-fallback-secret-key")
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+
+    # Local development origins are deliberately limited to the Vite dev server.
+    CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SECURE = False
+    REMEMBER_COOKIE_SAMESITE = "Lax"
     
     # SQLite database path resolution (ensures robust absolute path on all operating systems)
     raw_db_url = os.environ.get("DATABASE_URL")
@@ -46,21 +55,25 @@ class DevelopmentConfig(BaseConfig):
     """Configuration for local development."""
     DEBUG = True
     TESTING = False
+    SECRET_KEY = os.environ.get("SECRET_KEY") or "aquawise-local-development-only-secret"
 
 
 class TestingConfig(BaseConfig):
     """Configuration for automated test suite."""
     TESTING = True
     DEBUG = True
+    SECRET_KEY = "aquawise-test-only-secret"
     # In-memory database for fast, isolated tests
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    WTF_CSRF_ENABLED = False
 
 
 class ProductionConfig(BaseConfig):
     """Configuration for production deployment."""
     DEBUG = False
     TESTING = False
+    CORS_ALLOWED_ORIGINS = []
+    SESSION_COOKIE_SECURE = True
+    REMEMBER_COOKIE_SECURE = True
 
 
 config = {

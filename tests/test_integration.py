@@ -14,6 +14,7 @@ Validates end-to-end user journeys:
 import pytest
 from app import create_app, seed_achievements
 from backend.models import db, User
+from tests.browser_api_client import BrowserApiTestClient
 
 @pytest.fixture
 def app():
@@ -28,7 +29,7 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    return BrowserApiTestClient(app)
 
 class TestIntegrationJourney:
 

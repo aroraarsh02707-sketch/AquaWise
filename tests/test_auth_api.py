@@ -11,6 +11,7 @@ Endpoints tested:
 import json
 import pytest
 from app import create_app
+from tests.browser_api_client import BrowserApiTestClient
 from backend.models import db, User, Streak
 
 
@@ -28,7 +29,7 @@ def app():
 @pytest.fixture
 def client(app):
     """Test client with session cookie support."""
-    return app.test_client()
+    return BrowserApiTestClient(app)
 
 
 class TestRegisterAPI:

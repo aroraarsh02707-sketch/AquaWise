@@ -20,6 +20,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 import requests
 from app import create_app, seed_achievements
+from tests.browser_api_client import BrowserApiTestClient
 from backend.models import (
     db,
     User,
@@ -45,7 +46,7 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    return BrowserApiTestClient(app)
 
 
 @pytest.fixture

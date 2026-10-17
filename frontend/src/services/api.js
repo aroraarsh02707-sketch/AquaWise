@@ -11,6 +11,34 @@ const api = axios.create({
   },
 });
 
+let csrfToken = null;
+let csrfTokenRequest = null;
+
+api.interceptors.request.use(async (config) => {
+  const method = (config.method || 'get').toLowerCase();
+  if (!['post', 'put', 'patch', 'delete'].includes(method)) return config;
+
+  if (!csrfToken) {
+    csrfTokenRequest ||= api.get('/auth/csrf')
+      .then((response) => {
+        csrfToken = response.data?.data?.csrf_token || null;
+        return csrfToken;
+      })
+      .finally(() => { csrfTokenRequest = null; });
+    await csrfTokenRequest;
+  }
+  if (csrfToken) config.headers['X-CSRF-Token'] = csrfToken;
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.data?.error?.code === 'CSRF_TOKEN_INVALID') csrfToken = null;
+    return Promise.reject(error);
+  },
+);
+
 // Auth Services
 export const authService = {
   register: (data) => api.post('/auth/register', data),

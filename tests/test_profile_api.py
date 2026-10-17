@@ -16,6 +16,7 @@ Validates:
 
 import pytest
 from app import create_app, seed_achievements
+from tests.browser_api_client import BrowserApiTestClient
 from backend.models import (
     db, User, Assessment, Streak, Achievement, UserAchievement
 )
@@ -34,7 +35,7 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    return BrowserApiTestClient(app)
 
 @pytest.fixture
 def user_a(app):
