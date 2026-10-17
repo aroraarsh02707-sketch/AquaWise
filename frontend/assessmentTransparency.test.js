@@ -61,7 +61,7 @@ test('configured estimates are distinguished from entered values and qualify sco
   assert.match(getScorePresentation('household', calculation).qualification, /Configured estimates contribute/);
 });
 
-test('farmer score description reflects its practice-based inputs', () => {
+test('legacy non-household score description uses the generic archived fallback', () => {
   const info = getScorePresentation('farmer', {
     calculation_version: 2,
     unavailable_categories: [],
@@ -69,8 +69,8 @@ test('farmer score description reflects its practice-based inputs', () => {
     assumptions: [],
     assumption_litres_per_day: 0,
   });
-  assert.match(info.description, /irrigation method, rainwater harvesting, and irrigation frequency/);
-  assert.match(info.description, /does not use the calculated farm volume/);
+  assert.match(info.description, /legacy assessment/);
+  assert.match(info.description, /not presented in the current household workspace/);
 });
 
 test('older saved assessments without completeness metadata are qualified as unknown', () => {
