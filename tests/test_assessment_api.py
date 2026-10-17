@@ -30,6 +30,7 @@ from backend.models import (
     Streak,
     UserAchievement,
 )
+from backend.services.scoring_service import calculate_water_saver_score
 
 
 @pytest.fixture
@@ -130,6 +131,54 @@ class TestCreateAssessmentAPI:
         # Verify achievement evaluation awarded "First Assessment"
         new_badges = [a["name"] for a in assessment["new_achievements"]]
         assert "First Assessment" in new_badges
+
+    def test_v2_submission_without_vehicle_input_receives_no_vehicle_bonus(self, client, user_a):
+        login_client(client, user_a.email)
+        payload = {
+            "assessment_type": "household",
+            "assessment_version": 2,
+            "household_size": 1,
+            "showers_per_day": 1,
+            "shower_duration_minutes": 5,
+            "toilet_uses_per_day": 20,
+            "laundry_loads_per_week": 0,
+            "kitchen_usage_minutes": 10,
+            "vehicle_washing_frequency": None,
+            "gardening_frequency": 0,
+            "extended_answers": {
+                "water_sources": ["municipal"],
+                "conservation_measures": [],
+                "bathing_method": "shower",
+                "showers_per_person_per_day": 1,
+                "shower_duration_minutes": 5,
+                "shower_flow_rate_lpm": 10,
+                "toilet_flushes_per_person_per_day": 20,
+                "toilet_type": "standard",
+                "bathroom_tap_minutes_per_person_per_day": 0,
+                "kitchen_tap_minutes_per_day": 0,
+                "dishwashing_method": "basin",
+                "dishwashing_litres_per_day": 0,
+                "has_dishwasher": False,
+                "laundry_loads_per_week": 0,
+                "laundry_method": "front_load",
+                "cleaning_sessions_per_week": 0,
+                "has_garden": False,
+            },
+        }
+        response = client.post("/api/assessments", json=payload)
+        assert response.status_code == 201
+        score = response.get_json()["data"]["water_saver_score"]
+        no_vehicle_bonus = calculate_water_saver_score(
+            response.get_json()["data"]["daily_consumption"],
+            "household",
+            {"household_size": 1, "shower_duration_minutes": 5, "vehicle_washing_frequency": None, "kitchen_usage_minutes": 10},
+        )
+        assert score == no_vehicle_bonus
+        assert score < calculate_water_saver_score(
+            response.get_json()["data"]["daily_consumption"],
+            "household",
+            {"household_size": 1, "shower_duration_minutes": 5, "vehicle_washing_frequency": 0, "kitchen_usage_minutes": 10},
+        )
 
     def test_create_farmer_assessment_success(self, client, user_b):
         """Valid agricultural assessment calculates and persists with farmer details."""

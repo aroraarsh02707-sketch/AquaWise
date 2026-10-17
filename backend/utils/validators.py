@@ -10,6 +10,7 @@ Allowed enum values are kept here so they are easy to update and are not
 scattered across multiple route files.
 """
 
+import math
 import re
 
 # ---------------------------------------------------------------------------
@@ -57,8 +58,11 @@ def _clamp_errors(errors: dict, data: dict, rules: list) -> None:
             continue
         try:
             value = float(raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             errors[field] = f"{label} must be a number."
+            continue
+        if not math.isfinite(value):
+            errors[field] = f"{label} must be a finite number."
             continue
         if value < min_val:
             errors[field] = f"{label} must be at least {min_val}."
@@ -173,6 +177,12 @@ def validate_household_assessment(data: dict) -> dict:
         ("other_usage_litres",      0,  1000,  False, "Other water usage (litres/day)"),
     ]
     _clamp_errors(errors, data, numeric_rules)
+    household_size = data.get("household_size")
+    try:
+        if household_size not in (None, "") and math.isfinite(float(household_size)) and not float(household_size).is_integer():
+            errors["household_size"] = "Household size must be a whole number of people."
+    except (TypeError, ValueError, OverflowError):
+        pass
 
     return errors
 
@@ -225,7 +235,7 @@ def validate_household_assessment_v2(data: dict) -> dict:
             number = float(value)
             if number != number or number in (float("inf"), float("-inf")):
                 raise ValueError
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             errors[f"extended_answers.{name}"] = f"{label} must be a valid number."
             continue
         if number < minimum or number > maximum:
@@ -268,7 +278,7 @@ def validate_household_assessment_v2(data: dict) -> dict:
 def _num_for_validation(value):
     try:
         return float(value) if value not in (None, "") else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

@@ -6,40 +6,79 @@ import { dashboardService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 import { PageHeading, SectionTitle, StatePanel } from '../components/PagePrimitives';
+import { getScorePresentation } from '../assessmentTransparency';
 
 const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const chartColors = ['#42C7D9', '#58C4A0', '#F0BD70', '#8BE3EC', '#5B8EAC', '#B5A4E8', '#76B89F'];
 const appear = { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.25 } };
+const MotionLink = motion(Link);
 
 function Loading() {
   return <div className="page-loading" role="status"><span className="spinner" /><span>Gathering your latest water insights…</span><div className="loading-lines"><i /><i /><i /></div></div>;
 }
 
-function Metric({ label, value, unit, icon, note }) {
-  return <article className="metric-tile">
-    <div className="metric-label"><span className="metric-icon"><Icon name={icon} size={17} /></span>{label}</div>
-    <p className="metric-value">{value}<small>{unit}</small></p>
-    <span className="metric-note">{note}</span>
-  </article>;
+function Metric({ variant, label, value, unit, icon, note, index, scoreInfo, assessmentId }) {
+  const numericScore = variant === 'score' && Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : 0;
+  const circumference = 2 * Math.PI * 24;
+  return <motion.article className={`metric-tile metric-tile--${variant}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, delay: 0.12 + index * 0.075, ease: 'easeOut' }}>
+    <div className="metric-label"><span className="metric-icon"><Icon name={icon} size={18} /></span><span>{label}</span></div>
+    <div className="metric-main">
+      <p className="metric-value">{value}<small>{unit}</small></p>
+      {variant === 'weekly' && <div className="metric-static-mark" aria-hidden="true"><Icon name="calendar" size={27} /><span>7 DAYS</span></div>}
+      {variant === 'monthly' && <div className="metric-static-mark metric-static-mark--month" aria-hidden="true"><Icon name="water" size={27} /><span>MONTHLY</span></div>}
+      {variant === 'score' && <div className="score-ring" role="img" aria-label={value === '—' ? 'Water Saver Score unavailable' : `${value} out of 100 Water Saver Score`}><svg viewBox="0 0 56 56"><circle className="score-ring-track" cx="28" cy="28" r="24" /><circle className="score-ring-value" cx="28" cy="28" r="24" style={{ strokeDasharray: circumference, strokeDashoffset: circumference * (1 - numericScore / 100) }} /></svg><Icon name="score" size={17} /></div>}
+      {variant === 'streak' && <div className="streak-mark" aria-hidden="true"><Icon name="calendar" size={24} /><span>ACTIVE</span><i /></div>}
+    </div>
+    {variant === 'score' && scoreInfo ? <>
+      <span className="metric-note">{scoreInfo.description}</span>
+      {scoreInfo.scoreMethod && <span className="score-context-copy">{scoreInfo.scoreMethod}</span>}
+      {scoreInfo.completenessNote && <span className="score-completeness-note">{scoreInfo.completenessNote}</span>}
+      {scoreInfo.completenessCaveat && <span className="score-qualification">{scoreInfo.completenessCaveat}</span>}
+      {scoreInfo.qualification && <span className="score-qualification">{scoreInfo.qualification}</span>}
+      {assessmentId && <Link className="score-review-link" to={`/recommendations/${assessmentId}`}>Review assessment details <Icon name="arrowRight" size={13} /></Link>}
+    </> : <span className="metric-note">{note}</span>}
+  </motion.article>;
+}
+
+function recommendationIcon(category = '') {
+  const value = category.toLowerCase();
+  if (/bath|shower|bathing/.test(value)) return 'shower';
+  if (/toilet|flush/.test(value)) return 'toilet';
+  if (/leak|repair/.test(value)) return 'leak';
+  if (/kitchen|dish/.test(value)) return 'kitchen';
+  if (/garden|irrigat|farm|outdoor/.test(value)) return 'leaf';
+  return 'water';
+}
+
+function RecommendationCard({ recommendation, index }) {
+  const { category, priority, title, description, potential_saving: potentialSaving } = recommendation;
+  const normalizedPriority = String(priority || '').toLowerCase();
+  const hasPriority = ['high', 'medium', 'low'].includes(normalizedPriority);
+  const label = hasPriority ? `${normalizedPriority} priority` : 'Suggested';
+  return <MotionLink to="/recommendations" className={`next-step${index === 0 ? ' next-step--lead' : ''}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.48 + index * 0.07, ease: 'easeOut' }}>
+    <span className="next-step-icon"><Icon name={recommendationIcon(category)} size={20} /></span>
+    <span className="next-step-copy"><span className="next-step-meta"><small>{category || 'Water saving'}</small><i className={`priority-badge priority-badge--${hasPriority ? normalizedPriority : 'neutral'}`}>{label}</i></span><strong>{title}</strong><span>{description}</span></span>
+    <span className="next-step-action">{Number(potentialSaving) > 0 && <b>{fmt.format(potentialSaving)}<small> L/day</small></b>}<span>View action <Icon name="arrowRight" size={15} /></span></span>
+  </MotionLink>;
 }
 
 function WaterComposition({ categories, dailyTotal }) {
   const chartData = categories.map((item) => ({ ...item, value: Number(item.litres_per_day) || 0 }));
   if (!chartData.length) {
-    return <section className="surface-panel overview-composition">
+    return <motion.section className="surface-panel overview-composition" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.42, ease: 'easeOut' }}>
       <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" />
       <div className="overview-composition-empty"><Icon name="water" size={24} /><strong>Category details unavailable</strong><span>Your latest assessment does not contain category volumes yet.</span></div>
-    </section>;
+    </motion.section>;
   }
 
-  return <section className="surface-panel overview-composition">
+  return <motion.section className="surface-panel overview-composition" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.42, ease: 'easeOut' }}>
     <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" aside={<span className="composition-tag"><i /> ESTIMATED USE</span>} />
     <p className="overview-composition-intro">See how your latest estimated water use is distributed across categories.</p>
     <div className="overview-composition-body">
       <div className="overview-donut-wrap" role="img" aria-label="Doughnut chart of daily water use by category">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={chartData} dataKey="value" nameKey="category" innerRadius="68%" outerRadius="91%" paddingAngle={3} cornerRadius={5} stroke="#101F30" strokeWidth={3} isAnimationActive={false}>
+            <Pie data={chartData} dataKey="value" nameKey="category" innerRadius="68%" outerRadius="91%" paddingAngle={3} cornerRadius={5} stroke="#101F30" strokeWidth={3} isAnimationActive animationBegin={120} animationDuration={950} animationEasing="ease-out">
               {chartData.map((entry, index) => <Cell key={entry.category} fill={chartColors[index % chartColors.length]} />)}
             </Pie>
             <ChartTooltip formatter={(value, name, item) => { const share = Number(item?.payload?.percentage); const detail = Number.isFinite(share) ? ` · ${fmt.format(share)}%` : ''; return [`${fmt.format(Number(value))} L/day${detail}`, name]; }} contentStyle={{ background: '#08121F', border: '1px solid #315064', borderRadius: 9, color: '#E5EEF4', fontSize: 12 }} />
@@ -60,7 +99,7 @@ function WaterComposition({ categories, dailyTotal }) {
         </li>)}</ul>
       </div>
     </div>
-  </section>;
+  </motion.section>;
 }
 
 export default function Dashboard() {
@@ -102,15 +141,15 @@ export default function Dashboard() {
       <WaterComposition categories={categories} dailyTotal={Number(data.latest_daily_consumption) || 0} />
 
       <section className="metrics-row" aria-label="Water use metrics">
-        <Metric label="Weekly estimate" value={fmt.format(data.latest_weekly_consumption ?? 0)} unit="L" icon="calendar" note="At your latest usage rate" />
-        <Metric label="Monthly estimate" value={fmt.format(data.latest_monthly_consumption ?? 0)} unit="L" icon="water" note="At your latest usage rate" />
-        <Metric label="Water Saver Score" value={data.latest_water_saver_score ?? '—'} unit={data.latest_water_saver_score != null ? '/100' : ''} icon="score" note="From your latest assessment" />
-        <Metric label="Current streak" value={data.current_streak ?? 0} unit="days" icon="trend" note="Consecutive days active" />
+        <Metric index={0} variant="weekly" label="Weekly estimate" value={fmt.format(data.latest_weekly_consumption ?? 0)} unit="L" icon="calendar" note="Based on your latest assessment" />
+        <Metric index={1} variant="monthly" label="Monthly estimate" value={fmt.format(data.latest_monthly_consumption ?? 0)} unit="L" icon="water" note="Based on your latest assessment" />
+        <Metric index={2} variant="score" label="Water Saver Score" value={data.latest_water_saver_score ?? '—'} unit={data.latest_water_saver_score != null ? '/100' : ''} icon="score" note="Your latest assessment score" scoreInfo={getScorePresentation(data.latest_assessment_type, data.latest_calculation)} assessmentId={data.latest_assessment_id} />
+        <Metric index={3} variant="streak" label="Current streak" value={data.current_streak ?? 0} unit="days" icon="trend" note="Consecutive days active" />
       </section>
 
       <section className="surface-panel next-steps">
         <SectionTitle eyebrow="BASED ON YOUR PROFILE" title="Recommended next steps" aside={<Link className="text-link" to="/recommendations">Assessment history <Icon name="arrowRight" size={15} /></Link>} />
-        {recs.length ? <div className="next-step-list">{recs.slice(0, 3).map((r, i) => <Link to="/recommendations" className="next-step" key={r.id ?? `${r.title}-${i}`}><span className="next-step-number">0{i + 1}</span><span className="next-step-copy"><small>{r.category || 'Water saving'}</small><strong>{r.title}</strong><span>{r.description}</span></span>{Number(r.potential_saving) > 0 && <b>{fmt.format(r.potential_saving)}<small> L/day</small></b>}</Link>)}</div> : <div className="inline-empty"><Icon name="recommendations" size={20} /><p>No recommendations to show yet. New actions appear after your next assessment.</p><Link to="/assessment">Complete an assessment</Link></div>}
+        {recs.length ? <div className="next-step-list">{recs.slice(0, 3).map((r, i) => <RecommendationCard recommendation={r} index={i} key={r.id ?? `${r.title}-${i}`} />)}</div> : <div className="inline-empty"><Icon name="recommendations" size={20} /><p>No recommendations to show yet. New actions appear after your next assessment.</p><Link to="/assessment">Complete an assessment</Link></div>}
       </section>
     </>}
   </motion.div>;

@@ -702,7 +702,7 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
     if any(k in msg for k in ["score", "saver score", "aquawise", "how it works", "calculation", "benchmark"]):
         return context_prefix + (
             "**About AquaWise & Water Saver Score:**\n\n"
-            "• **Water Saver Score (0–100):** Benchmarks your water efficiency based on daily per-capita usage against CPHEEO urban guidelines (150 L/capita/day) and sustainable farming standards.\n"
+            "• **Water Saver Score (0–100):** The household indicator uses estimated daily use per person and reported habits; 150 L/person/day is a reference point. The farmer indicator uses reported irrigation practices, not measured water use. These indicators use different inputs and are not directly comparable. Neither is a measured or validated assessment.\n"
             "• **Deterministic Calculations:** All consumption figures are calculated by backend math formulas, not generative AI.\n"
             "• **Track Over Time:** Take recurring assessments to increase your streak and earn conservation achievements!"
         )

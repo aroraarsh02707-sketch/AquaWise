@@ -216,6 +216,117 @@ class TestHouseholdCalculation:
         )
 
 
+class TestHouseholdAssessmentV2Calculation:
+
+    def _payload(self, household_size=1, **answer_overrides):
+        answers = {
+            "bathing_method": "shower",
+            "showers_per_person_per_day": 1,
+            "shower_duration_minutes": 5,
+            "shower_flow_rate_lpm": 10,
+            "toilet_flushes_per_person_per_day": 4,
+            "toilet_type": "standard",
+            "toilet_flush_volume_litres": 6,
+            "bathroom_tap_minutes_per_person_per_day": 2,
+            "bathroom_tap_flow_rate_lpm": 4,
+            "kitchen_tap_minutes_per_day": 5,
+            "kitchen_tap_flow_rate_lpm": 6,
+            "dishwashing_method": "basin",
+            "dishwashing_litres_per_day": 12,
+            "has_dishwasher": False,
+            "laundry_loads_per_week": 7,
+            "laundry_method": "front_load",
+            "laundry_litres_per_load": 50,
+            "cleaning_sessions_per_week": 0,
+            "has_garden": False,
+        }
+        answers.update(answer_overrides)
+        return {"assessment_type": "household", "assessment_version": 2, "household_size": household_size, "extended_answers": answers}
+
+    def test_hand_calculated_one_person_household(self):
+        # Shower 50 + toilet 24 + bathroom taps 8 + kitchen/dishes 42 + laundry 50 = 174 L/day.
+        result = calculate_household_consumption(self._payload())
+        assert result["daily_consumption"] == 174
+        assert result["weekly_consumption"] == 1218
+        assert result["monthly_consumption"] == 5220
+        assert sum(row["litres_per_day"] for row in result["breakdown"]) == 174
+        assert abs(sum(row["percentage"] for row in result["breakdown"]) - 100) < 0.5
+        assert result["estimate_kind"] == "input_based estimate"
+        assert result["unavailable_categories"] == []
+        assert result["incomplete_categories"] == []
+
+    def test_household_size_only_scales_per_person_activities(self):
+        result = calculate_household_consumption(self._payload(household_size=3))
+        # Person-based activities: (50 + 24 + 8) × 3; household activities: 42 + 50.
+        assert result["daily_consumption"] == 338
+        assert result["weekly_consumption"] == 2366
+        assert result["monthly_consumption"] == 10140
+
+    def test_unknown_fixture_flow_uses_disclosed_configurable_default(self):
+        payload = self._payload(household_size=2, shower_flow_rate_lpm=None)
+        result = calculate_household_consumption(payload)
+        bathing = next(row["litres_per_day"] for row in result["breakdown"] if row["category"] == "Bathing & showers")
+        assert bathing == 2 * 1 * 5 * C.HOUSEHOLD_ASSESSMENT_DEFAULTS["shower_flow_lpm"]
+        assert any("Default shower flow" in assumption for assumption in result["assumptions"])
+        assert result["assumption_litres_per_day"] == bathing
+        assert result["estimate_kind"] == "rough"
+
+    def test_unknown_dishwashing_detail_does_not_drop_known_kitchen_tap_use(self):
+        payload = self._payload(dishwashing_method="running_water", dishwashing_tap_minutes_per_day=None)
+        result = calculate_household_consumption(payload)
+        kitchen = next(row["litres_per_day"] for row in result["breakdown"] if row["category"] == "Kitchen & dishwashing")
+        assert kitchen == 30
+        assert "Kitchen & dishwashing" in result["incomplete_categories"]
+        assert result["estimate_kind"] == "rough"
+
+    def test_missing_category_reduces_included_per_person_total(self):
+        complete = calculate_household_consumption(self._payload())
+        missing_toilet = calculate_household_consumption(self._payload(toilet_flushes_per_person_per_day=None))
+        assert missing_toilet["daily_per_person"] < complete["daily_per_person"]
+        assert "Toilet flushing" in missing_toilet["unavailable_categories"]
+
+    def test_incomplete_bathing_method_keeps_known_selected_component(self):
+        payload = self._payload(
+            bathing_method="both",
+            showers_per_person_per_day=1,
+            shower_duration_minutes=5,
+            shower_flow_rate_lpm=10,
+            bucket_baths_per_person_per_day=1,
+            buckets_per_bath=None,
+        )
+        result = calculate_household_consumption(payload)
+        bathing = next(row["litres_per_day"] for row in result["breakdown"] if row["category"] == "Bathing & showers")
+        assert bathing == 50
+        assert "Bathing & showers" in result["incomplete_categories"]
+        assert result["estimate_kind"] == "rough"
+
+    def test_mixed_category_keeps_measured_and_assumed_litres_separate(self):
+        payload = self._payload(has_dishwasher=True, dishwasher_cycles_per_week=7, dishwasher_litres_per_cycle=None)
+        result = calculate_household_consumption(payload)
+        kitchen = next(row["litres_per_day"] for row in result["breakdown"] if row["category"] == "Kitchen & dishwashing")
+        assert kitchen == 44
+        assert result["category_sources"]["Kitchen & dishwashing"] == "mixed"
+        assert result["user_input_litres_per_day"] == 162
+        assert result["assumption_litres_per_day"] == 14
+        assert result["user_input_litres_per_day"] + result["assumption_litres_per_day"] == result["daily_consumption"]
+        assert result["mixed_categories"] == 1
+
+    def test_zero_activity_has_zero_share_without_nan(self):
+        result = calculate_household_consumption(self._payload(
+            showers_per_person_per_day=0, shower_duration_minutes=0,
+            toilet_flushes_per_person_per_day=0, bathroom_tap_minutes_per_person_per_day=0,
+            kitchen_tap_minutes_per_day=0, dishwashing_litres_per_day=0, laundry_loads_per_week=0,
+        ))
+        assert result["daily_consumption"] == result["weekly_consumption"] == result["monthly_consumption"] == 0
+        assert all(row["percentage"] == 0 for row in result["breakdown"])
+
+    def test_zero_in_one_activity_does_not_remove_other_categories(self):
+        result = calculate_household_consumption(self._payload(showers_per_person_per_day=0, shower_duration_minutes=0))
+        bathing = next(row for row in result["breakdown"] if row["category"] == "Bathing & showers")
+        assert bathing["litres_per_day"] == bathing["percentage"] == 0
+        assert result["daily_consumption"] == 124
+
+
 # ===========================================================================
 # Calculation tests — Farmer
 # ===========================================================================
@@ -273,9 +384,9 @@ class TestFarmerCalculation:
         expected_daily = (expected_per_session * 2) / 7
         assert abs(result["daily_consumption"] - expected_daily) < 1.0
 
-    def test_rainwater_credit_reduces_consumption(self):
-        """Enabling rainwater harvesting must produce a lower result (10 % credit)."""
-        base_data = {
+    def test_rainwater_flag_does_not_apply_unmeasured_volume_credit(self):
+        """A yes/no collection flag cannot justify a fixed percentage deduction."""
+        data = {
             "farm_area": 2.0,
             "farm_area_unit": "acre",
             "crop_type": "rice",
@@ -286,14 +397,10 @@ class TestFarmerCalculation:
             "estimated_irrigation_litres": 0,
             "rainwater_harvesting": False,
         }
-        with_credit = dict(base_data, rainwater_harvesting=True)
-
-        r_base   = calculate_farmer_consumption(base_data)
-        r_credit = calculate_farmer_consumption(with_credit)
-
-        assert r_credit["daily_consumption"] < r_base["daily_consumption"]
-        credit_applied = r_base["daily_consumption"] * 0.10
-        assert abs(r_base["daily_consumption"] - r_credit["daily_consumption"] - credit_applied) < 1.0
+        without_flag = calculate_farmer_consumption(data)
+        with_flag = calculate_farmer_consumption(dict(data, rainwater_harvesting=True))
+        assert with_flag["daily_consumption"] == without_flag["daily_consumption"]
+        assert "no volume credit was applied" in with_flag["calculation_note"]
 
     def test_zero_frequency_gives_zero_daily(self):
         """If irrigation_frequency is 0, daily consumption must be 0."""
@@ -408,10 +515,37 @@ class TestHouseholdValidation:
     def test_valid_payload_returns_no_errors(self):
         assert validate_household_assessment(self._valid()) == {}
 
+    def _valid_v2(self, **answers):
+        return {**self._valid(), "assessment_version": 2, "extended_answers": {
+            "water_sources": ["municipal"], "conservation_measures": [], **answers,
+        }}
+
+    def test_v2_negative_flow_rate_rejected(self):
+        errors = validate_household_assessment(self._valid_v2(shower_flow_rate_lpm=-2))
+        assert "extended_answers.shower_flow_rate_lpm" in errors
+
+    def test_v2_non_finite_flow_rate_rejected(self):
+        errors = validate_household_assessment(self._valid_v2(shower_flow_rate_lpm=float("nan")))
+        assert "extended_answers.shower_flow_rate_lpm" in errors
+
+    def test_v2_fractional_household_size_rejected(self):
+        data = self._valid_v2(); data["household_size"] = 2.5
+        assert "household size" in validate_household_assessment(data)["household_size"].lower()
+
     def test_zero_household_size_rejected(self):
         data = self._valid(); data["household_size"] = 0
         errors = validate_household_assessment(data)
         assert "household_size" in errors
+
+    def test_fractional_household_size_rejected(self):
+        data = self._valid(); data["household_size"] = 2.5
+        errors = validate_household_assessment(data)
+        assert "whole number" in errors["household_size"]
+
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_household_values_rejected(self, invalid):
+        data = self._valid(); data["showers_per_day"] = invalid
+        assert "showers_per_day" in validate_household_assessment(data)
 
     def test_negative_showers_rejected(self):
         data = self._valid(); data["showers_per_day"] = -1
@@ -463,6 +597,10 @@ class TestFarmerValidation:
 
     def test_valid_payload_returns_no_errors(self):
         assert validate_farmer_assessment(self._valid()) == {}
+
+    def test_non_finite_farmer_volume_rejected(self):
+        data = self._valid(); data["estimated_irrigation_litres"] = float("nan")
+        assert "estimated_irrigation_litres" in validate_farmer_assessment(data)
 
     def test_zero_farm_area_rejected(self):
         data = self._valid(); data["farm_area"] = 0

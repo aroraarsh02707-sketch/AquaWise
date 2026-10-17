@@ -113,7 +113,10 @@ def create_assessment():
                 toilet_uses_per_day=float(data.get("toilet_uses_per_day", 0.0)),
                 laundry_loads_per_week=float(data.get("laundry_loads_per_week", 0.0)),
                 kitchen_usage_minutes=float(data.get("kitchen_usage_minutes", 0.0)),
-                vehicle_washing_frequency=float(data.get("vehicle_washing_frequency", 0.0)),
+                vehicle_washing_frequency=(
+                    float(data["vehicle_washing_frequency"])
+                    if data.get("vehicle_washing_frequency") not in (None, "") else None
+                ),
                 gardening_frequency=float(data.get("gardening_frequency", 0.0)),
                 gardening_duration_minutes=float(data.get("gardening_duration_minutes", 0.0)),
                 other_usage_litres=float(data.get("other_usage_litres", 0.0)),

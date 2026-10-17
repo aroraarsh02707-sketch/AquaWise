@@ -35,6 +35,13 @@ def app():
 
 class TestWaterSaverScoreCalculation:
 
+    def test_missing_vehicle_frequency_has_no_bonus_but_explicit_zero_keeps_bonus(self):
+        base_details = {"household_size": 1, "shower_duration_minutes": 0, "kitchen_usage_minutes": 0}
+        missing_score = calculate_water_saver_score(150.0, "household", {**base_details, "vehicle_washing_frequency": None})
+        zero_score = calculate_water_saver_score(150.0, "household", {**base_details, "vehicle_washing_frequency": 0})
+        assert missing_score == 70
+        assert zero_score == 72
+
     def test_low_consumption_household_gets_high_score(self):
         """A household with 60 L/capita/day should score in the Champion tier (>= 90)."""
         score = calculate_water_saver_score(

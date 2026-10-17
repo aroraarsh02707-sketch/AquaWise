@@ -29,6 +29,8 @@ Both functions return the same shape:
     }
 """
 
+import math
+
 from backend.utils.constants import (
     # Shower
     SHOWER_FLOW_RATE_LPM,
@@ -68,9 +70,10 @@ from backend.utils.constants import (
 def _safe_float(value, default: float = 0.0) -> float:
     """Convert a value to float, returning `default` if conversion fails."""
     try:
-        return max(0.0, float(value))
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return default
+    return max(0.0, number) if math.isfinite(number) else default
 
 
 def _build_breakdown(category_litres: dict[str, float]) -> tuple[float, list[dict]]:
@@ -80,12 +83,18 @@ def _build_breakdown(category_litres: dict[str, float]) -> tuple[float, list[dic
 
     Returns: (total_daily, breakdown_list)
     """
-    total = sum(category_litres.values())
+    normalized = {}
+    for category, value in category_litres.items():
+        litres = float(value)
+        if not math.isfinite(litres):
+            raise ValueError(f"Non-finite water estimate for {category}.")
+        normalized[category] = max(0.0, litres)
+    total = sum(normalized.values())
+    if not math.isfinite(total):
+        raise ValueError("Water estimate total is outside the supported numeric range.")
 
     breakdown = []
-    for category, litres in category_litres.items():
-        if litres < 0:
-            litres = 0.0
+    for category, litres in normalized.items():
         pct = (litres / total * 100.0) if total > 0 else 0.0
         breakdown.append({
             "category": category,
@@ -99,12 +108,19 @@ def _build_breakdown(category_litres: dict[str, float]) -> tuple[float, list[dic
     return round(total, 2), breakdown
 
 
+def _project(daily: float, days: int) -> float:
+    projected = daily * days
+    if not math.isfinite(projected):
+        raise ValueError("Water estimate projection is outside the supported numeric range.")
+    return round(projected, 2)
+
+
 def _to_weekly(daily: float) -> float:
-    return round(daily * DAYS_IN_WEEK, 2)
+    return _project(daily, DAYS_IN_WEEK)
 
 
 def _to_monthly(daily: float) -> float:
-    return round(daily * DAYS_IN_MONTH, 2)
+    return _project(daily, DAYS_IN_MONTH)
 
 
 def _result(daily: float, breakdown: list[dict]) -> dict:
@@ -217,9 +233,9 @@ def _optional_number(value):
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    return number if number >= 0 and number < float("inf") else None
+    return number if math.isfinite(number) and number >= 0 else None
 
 
 def calculate_household_assessment_v2(data: dict) -> dict:
@@ -234,12 +250,19 @@ def calculate_household_assessment_v2(data: dict) -> dict:
     defaults = HOUSEHOLD_ASSESSMENT_DEFAULTS
     category_values: dict[str, float] = {}
     category_sources: dict[str, str] = {}
+    source_litres = {"user": 0.0, "assumption": 0.0}
     assumptions: list[str] = []
+    incomplete_categories: set[str] = set()
 
     def add(category, value, source="user"):
-        if value is not None:
-            category_values[category] = max(0.0, float(value))
-            category_sources[category] = source
+        if value is None:
+            return
+        litres = max(0.0, float(value))
+        category_values[category] = category_values.get(category, 0.0) + litres
+        existing_source = category_sources.get(category)
+        category_sources[category] = source if existing_source in (None, source) else "mixed"
+        if source in source_litres:
+            source_litres[source] += litres
 
     def assumed(key, label):
         assumptions.append(f"{label}: {defaults[key]}")
@@ -247,33 +270,37 @@ def calculate_household_assessment_v2(data: dict) -> dict:
 
     # 1. Bathing: shower and bucket-bath components are added only when selected.
     method = answers.get("bathing_method", "shower")
-    bath_total = 0.0
-    bath_available = True
-    bath_source = "user"
+    bath_incomplete = False
+    bath_components = []
     if method in {"shower", "both"}:
         count = _optional_number(answers.get("showers_per_person_per_day"))
         duration = _optional_number(answers.get("shower_duration_minutes"))
         if count is None or duration is None:
-            bath_available = False
-        elif count > 0 and duration > 0:
+            bath_incomplete = True
+        else:
             flow = _optional_number(answers.get("shower_flow_rate_lpm"))
-            if flow is None:
+            source = "user"
+            if flow is None and count > 0 and duration > 0:
                 flow = assumed("shower_flow_lpm", "Default shower flow (L/min)")
-                bath_source = "assumption"
-            bath_total += count * duration * flow * size
+                source = "assumption"
+            bath_components.append((count * duration * (flow or 0) * size, source))
     if method in {"bucket", "both"}:
         baths = _optional_number(answers.get("bucket_baths_per_person_per_day"))
         buckets = _optional_number(answers.get("buckets_per_bath"))
         if baths is None or buckets is None:
-            bath_available = False
-        elif baths > 0 and buckets > 0:
+            bath_incomplete = True
+        else:
             capacity = _optional_number(answers.get("bucket_capacity_litres"))
-            if capacity is None:
+            source = "user"
+            if capacity is None and baths > 0 and buckets > 0:
                 capacity = assumed("bucket_capacity_l", "Default bucket capacity (L)")
-                bath_source = "assumption"
-            bath_total += baths * buckets * capacity * size
-    if method in {"shower", "bucket", "both"} and bath_available:
-        add("Bathing & showers", bath_total, bath_source)
+                source = "assumption"
+            bath_components.append((baths * buckets * (capacity or 0) * size, source))
+    if method in {"shower", "bucket", "both"}:
+        for litres, source in bath_components:
+            add("Bathing & showers", litres, source)
+        if bath_incomplete and bath_components:
+            incomplete_categories.add("Bathing & showers")
 
     # 2. Toilet: specific known flush volumes override configurable type defaults.
     flushes = _optional_number(answers.get("toilet_flushes_per_person_per_day"))
@@ -297,56 +324,56 @@ def calculate_household_assessment_v2(data: dict) -> dict:
             source = "assumption"
         add("Bathroom taps", tap_minutes * tap_flow * size, source)
 
-    # 4. Kitchen and dishwashing. Kitchen prep minutes exclude dishwashing;
-    # dishwasher cycles replace (rather than add to) manual dishwashing.
+    # 4. Kitchen and dishwashing. Known components remain in the total when a
+    # separate optional dishwashing detail is unknown; that partial category is disclosed.
     kitchen_minutes = _optional_number(answers.get("kitchen_tap_minutes_per_day"))
     dish_mode = answers.get("dishwashing_method")
     dishwasher = answers.get("has_dishwasher") is True
-    kitchen_known = kitchen_minutes is not None
-    kitchen_litres = 0.0
-    kitchen_source = "user"
+    kitchen_components = []
+    kitchen_incomplete = kitchen_minutes is None
+    kitchen_category = "Kitchen & dishwashing"
     if kitchen_minutes is not None:
         flow = _optional_number(answers.get("kitchen_tap_flow_rate_lpm"))
+        source = "user"
         if kitchen_minutes > 0 and flow is None:
             flow = assumed("tap_flow_lpm", "Default kitchen tap flow (L/min)")
-            kitchen_source = "assumption"
-        kitchen_litres += kitchen_minutes * (flow or 0)
+            source = "assumption"
+        kitchen_components.append((kitchen_minutes * (flow or 0), source))
     if dishwasher:
         cycles = _optional_number(answers.get("dishwasher_cycles_per_week"))
         if cycles is None:
-            kitchen_known = False
-        elif cycles > 0:
+            kitchen_incomplete = True
+        else:
             per_cycle = _optional_number(answers.get("dishwasher_litres_per_cycle"))
-            if per_cycle is None:
+            source = "user"
+            if cycles > 0 and per_cycle is None:
                 per_cycle = assumed("dishwasher_l_per_cycle", "Default dishwasher use (L/cycle)")
-                kitchen_source = "assumption"
-            kitchen_litres += cycles * per_cycle / DAYS_IN_WEEK
+                source = "assumption"
+            kitchen_components.append((cycles * (per_cycle or 0) / DAYS_IN_WEEK, source))
     elif dish_mode == "running_water":
         dish_minutes = _optional_number(answers.get("dishwashing_tap_minutes_per_day"))
         if dish_minutes is None:
-            kitchen_known = False
-        elif dish_minutes > 0:
+            kitchen_incomplete = True
+        else:
             flow = _optional_number(answers.get("kitchen_tap_flow_rate_lpm"))
-            if flow is None:
+            source = "user"
+            if dish_minutes > 0 and flow is None:
                 flow = assumed("tap_flow_lpm", "Default kitchen tap flow (L/min)")
-                kitchen_source = "assumption"
-            kitchen_litres += dish_minutes * flow
-    elif not dishwasher and dish_mode == "basin":
-        basin_volume = _optional_number(answers.get("dishwashing_litres_per_day"))
-        if basin_volume is None:
-            kitchen_known = False
+                source = "assumption"
+            kitchen_components.append((dish_minutes * (flow or 0), source))
+    elif dish_mode in {"basin", "other"}:
+        volume = _optional_number(answers.get("dishwashing_litres_per_day"))
+        if volume is None:
+            kitchen_incomplete = True
         else:
-            kitchen_litres += basin_volume
-    elif not dishwasher and dish_mode == "other":
-        other_volume = _optional_number(answers.get("dishwashing_litres_per_day"))
-        if other_volume is None:
-            kitchen_known = False
-        else:
-            kitchen_litres += other_volume
+            kitchen_components.append((volume, "user"))
     else:
-        kitchen_known = False
-    if kitchen_known:
-        add("Kitchen & dishwashing", kitchen_litres, kitchen_source)
+        kitchen_incomplete = True
+
+    for litres, source in kitchen_components:
+        add(kitchen_category, litres, source)
+    if kitchen_incomplete and kitchen_components:
+        incomplete_categories.add(kitchen_category)
 
     # 5. Laundry: machine default is configurable; hand washing requires a supplied volume.
     loads = _optional_number(answers.get("laundry_loads_per_week"))
@@ -363,15 +390,17 @@ def calculate_household_assessment_v2(data: dict) -> dict:
             add("Laundry", loads * per_load / DAYS_IN_WEEK, source)
         elif laundry_method == "hand_wash":
             per_load = _optional_number(answers.get("handwash_litres_per_load"))
+            source = "user"
             if per_load is None:
                 buckets = _optional_number(answers.get("handwash_buckets_per_load"))
                 if buckets is not None:
                     capacity = _optional_number(answers.get("handwash_bucket_capacity_litres"))
-                    if capacity is None:
+                    if capacity is None and buckets > 0:
                         capacity = assumed("bucket_capacity_l", "Default laundry bucket capacity (L)")
-                    per_load = buckets * capacity
+                        source = "assumption"
+                    per_load = buckets * (capacity or 0)
             if per_load is not None:
-                add("Laundry", loads * per_load / DAYS_IN_WEEK)
+                add("Laundry", loads * per_load / DAYS_IN_WEEK, source)
 
     # 6. Cleaning: hoses use flow × duration; other methods need a session volume.
     cleaning_frequency = _optional_number(answers.get("cleaning_sessions_per_week"))
@@ -420,19 +449,22 @@ def calculate_household_assessment_v2(data: dict) -> dict:
     daily, breakdown = _build_breakdown(category_values)
     category_order = ["Bathing & showers", "Toilet flushing", "Bathroom taps", "Kitchen & dishwashing", "Laundry", "Household cleaning", "Outdoor watering"]
     unavailable = [name for name in category_order if name not in category_values]
-    user_categories = sum(1 for source in category_sources.values() if source == "user")
-    assumed_categories = len(category_sources) - user_categories
-    user_input_litres = sum(category_values[name] for name, source in category_sources.items() if source == "user")
-    assumption_litres = sum(category_values[name] for name, source in category_sources.items() if source == "assumption")
+    user_categories = sum(source in {"user", "mixed"} for source in category_sources.values())
+    assumed_categories = sum(source in {"assumption", "mixed"} for source in category_sources.values())
+    mixed_categories = sum(source == "mixed" for source in category_sources.values())
+    user_input_litres = source_litres["user"]
+    assumption_litres = source_litres["assumption"]
     result = _result(daily, breakdown)
     result.update({
         "daily_per_person": round(daily / size, 2),
-        "estimate_kind": "rough" if unavailable or assumptions else "input_based estimate",
+        "estimate_kind": "rough" if unavailable or incomplete_categories or assumptions else "input_based estimate",
         "category_count": len(category_values),
         "category_total": len(category_order),
         "unavailable_categories": unavailable,
+        "incomplete_categories": sorted(incomplete_categories),
         "user_input_categories": user_categories,
         "assumption_categories": assumed_categories,
+        "mixed_categories": mixed_categories,
         "user_input_litres_per_day": round(user_input_litres, 2),
         "assumption_litres_per_day": round(assumption_litres, 2),
         "category_sources": category_sources,
@@ -464,7 +496,7 @@ def calculate_farmer_consumption(data: dict) -> dict:
         irrigation_frequency        sessions per week
         irrigation_duration_minutes minutes per session
         estimated_irrigation_litres litres per session (user-provided override)
-        rainwater_harvesting        bool — if True, subtract a 10 % credit
+        rainwater_harvesting        bool — contextual only; no volume supplied
 
     Strategy
     --------
@@ -478,10 +510,10 @@ def calculate_farmer_consumption(data: dict) -> dict:
             litres_per_session = area_ha × (duration_h) × rate_L_ha_h
         where `rate_L_ha_h` depends on the irrigation method (see constants.py).
 
-    Rainwater harvesting credit:
-        If the farmer reports using rainwater harvesting, we apply a 10 %
-        reduction to the total as a rough conservation credit.  This is
-        clearly an approximation and is documented accordingly.
+    Rainwater harvesting:
+        The yes/no flag is recorded as context only. It does not quantify the
+        share of irrigation supplied by rainwater, so it cannot safely reduce
+        the consumption estimate.
 
     Notes
     -----
@@ -494,7 +526,7 @@ def calculate_farmer_consumption(data: dict) -> dict:
     freq_per_week       = _safe_float(data.get("irrigation_frequency"))
     duration_minutes    = _safe_float(data.get("irrigation_duration_minutes"))
     user_estimate_L     = _safe_float(data.get("estimated_irrigation_litres"))
-    rainwater_credit    = bool(data.get("rainwater_harvesting", False))
+    rainwater_harvesting = bool(data.get("rainwater_harvesting", False))
 
     # Convert area to hectares
     if farm_area_unit == "acre":
@@ -517,14 +549,6 @@ def calculate_farmer_consumption(data: dict) -> dict:
     # Daily irrigation equivalent (sessions per week ÷ 7)
     irrigation_litres_per_day = (litres_per_session * freq_per_week) / DAYS_IN_WEEK
 
-    # Rainwater harvesting credit: 10 % reduction (conservative estimate)
-    if rainwater_credit and irrigation_litres_per_day > 0:
-        credit = irrigation_litres_per_day * 0.10
-        irrigation_litres_per_day -= credit
-        rainwater_adjusted = True
-    else:
-        rainwater_adjusted = False
-
     category_litres = {
         "Irrigation": max(0.0, irrigation_litres_per_day),
     }
@@ -532,8 +556,7 @@ def calculate_farmer_consumption(data: dict) -> dict:
     daily, breakdown = _build_breakdown(category_litres)
 
     result = _result(daily, breakdown)
-    result["calculation_note"] = (
-        f"Irrigation estimate based on {source_note}."
-        + (" Rainwater harvesting credit (10%) applied." if rainwater_adjusted else "")
-    )
+    result["calculation_note"] = f"Irrigation estimate based on {source_note}."
+    if rainwater_harvesting:
+        result["calculation_note"] += " Rainwater harvesting was reported, but no volume credit was applied because the supplied share is unknown."
     return result

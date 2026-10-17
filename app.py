@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request
 from flask_login import LoginManager
 from sqlalchemy import inspect
 from config import config
@@ -187,10 +187,14 @@ def create_app(config_name=None):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
 
-    # Root route
+    # Root route: Flask serves the API; the Vite frontend owns its own index page.
     @app.route("/", methods=["GET"])
     def index():
-        return render_template("index.html")
+        return jsonify({
+            "app": app.config.get("APP_NAME", "AquaWise"),
+            "message": "AquaWise API service.",
+            "health": "/api/health",
+        })
 
     # Standard JSON error handlers for API routes
     @app.errorhandler(404)

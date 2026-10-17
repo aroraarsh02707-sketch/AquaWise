@@ -59,7 +59,7 @@ export default function HouseholdAssessment() {
     return () => { active = false; };
   }, [editId]);
   const set = (key, value) => { setAnswers((previous) => ({ ...previous, [key]: value })); setErrors((previous) => { const next = { ...previous }; delete next[`extended_answers.${key}`]; delete next[key]; return next; }); setFormError(''); };
-  const field = (id, label, unit, hint, required = false) => { const [min,max] = numBounds[id] || [0,10000]; return <Field key={id} id={id} label={label} value={answers[id]} onChange={(e) => set(id, e.target.value)} unit={unit} min={min} max={max} hint={hint} required={required} error={errors[`extended_answers.${id}`]} allowUnknown={!required} />; };
+  const field = (id, label, unit, hint, required = false) => { const [min,max] = numBounds[id] || [0,10000]; return <Field key={id} id={id} label={label} value={answers[id]} onChange={(e) => set(id, e.target.value)} unit={unit} min={min} max={max} step={id === 'household_size' ? 1 : 'any'} hint={hint} required={required} error={errors[`extended_answers.${id}`]} allowUnknown={!required} />; };
   const select = (id,label,options) => <Field key={id} id={id} label={label} type="select" options={options} value={answers[id]} onChange={(e) => set(id,e.target.value)} required error={errors[`extended_answers.${id}`]} />;
   const requiredNumber = (id,label,unit,hint) => field(id,label,unit,hint,true);
   const progress = current >= sections.length ? 100 : ((current + 1) / sections.length) * 100;
@@ -86,7 +86,7 @@ export default function HouseholdAssessment() {
     </>;
   })();
 
-  const buildPayload = () => ({ assessment_type:'household', assessment_version:2, household_size:Number(answers.household_size), showers_per_day:Number(answers.showers_per_person_per_day || 0), shower_duration_minutes:Number(answers.shower_duration_minutes || 0), toilet_uses_per_day:Number(answers.toilet_flushes_per_person_per_day || 0), laundry_loads_per_week:Number(answers.laundry_loads_per_week || 0), kitchen_usage_minutes:Number(answers.kitchen_tap_minutes_per_day || 0), vehicle_washing_frequency:0, gardening_frequency:answers.has_garden ? Number(answers.garden_sessions_per_week || 0) : 0, gardening_duration_minutes:Number(answers.garden_minutes_per_session || 0), other_usage_litres:0, extended_answers:answers });
+  const buildPayload = () => ({ assessment_type:'household', assessment_version:2, household_size:Number(answers.household_size), showers_per_day:Number(answers.showers_per_person_per_day || 0), shower_duration_minutes:Number(answers.shower_duration_minutes || 0), toilet_uses_per_day:Number(answers.toilet_flushes_per_person_per_day || 0), laundry_loads_per_week:Number(answers.laundry_loads_per_week || 0), kitchen_usage_minutes:Number(answers.kitchen_tap_minutes_per_day || 0), vehicle_washing_frequency:null, gardening_frequency:answers.has_garden ? Number(answers.garden_sessions_per_week || 0) : 0, gardening_duration_minutes:Number(answers.garden_minutes_per_session || 0), other_usage_litres:0, extended_answers:answers });
   const goNext = () => {
     if (!formRef.current?.reportValidity()) return;
     const requiredChoices = current === 1 ? ['bathing_method','tap_off_while_brushing'] : current === 2 ? ['kitchen_tap_runs_while_washing','has_dishwasher','laundry_full_loads'] : current === 3 ? ['has_garden'] : [];

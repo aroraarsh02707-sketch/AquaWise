@@ -82,6 +82,14 @@ def user_a_assessments(user_a):
         weekly_consumption=2800.0,
         monthly_consumption=12000.0,
         water_saver_score=75,
+        calculation_details={
+            "calculation_version": 2,
+            "estimate_kind": "rough",
+            "unavailable_categories": ["Laundry"],
+            "incomplete_categories": [],
+            "assumptions": [],
+            "assumption_litres_per_day": 0,
+        },
     )
     db.session.add_all([a1, a2])
     db.session.flush()
@@ -166,12 +174,53 @@ class TestDashboardAPI:
         assert payload["latest_weekly_consumption"] == 2800.0
         assert payload["latest_monthly_consumption"] == 12000.0
         assert payload["latest_water_saver_score"] == 75
+        assert payload["latest_assessment_id"] == user_a_assessments[1].id
+        assert payload["latest_assessment_type"] == "household"
+        assert payload["latest_calculation"]["unavailable_categories"] == ["Laundry"]
         assert payload["current_streak"] == 5
         assert payload["top_category"] == "Bathing"
         assert len(payload["recommendations"]) == 2
         # Verify descending sort by potential saving
         assert payload["recommendations"][0]["potential_saving"] == 50.0
         assert payload["recommendations"][1]["potential_saving"] == 20.0
+
+    def test_saved_score_and_calculation_metadata_are_returned_without_recalculation(self, client, user_a, user_a_assessments):
+        login(client, user_a.email)
+        saved = user_a_assessments[1]
+        response = client.get(f"/api/assessments/{saved.id}")
+        assert response.status_code == 200
+        assessment = response.get_json()["data"]
+        assert assessment["water_saver_score"] == 75
+        assert assessment["calculation"]["unavailable_categories"] == ["Laundry"]
+
+        dashboard = client.get("/api/dashboard").get_json()["data"]
+        assert dashboard["latest_water_saver_score"] == 75
+        assert dashboard["latest_calculation"] == assessment["calculation"]
+
+    def test_legacy_score_remains_unchanged_in_result_dashboard_and_history(self, client, user_a):
+        login(client, user_a.email)
+        now = datetime.now(timezone.utc)
+        saved = Assessment(
+            user_id=user_a.id,
+            assessment_type="household",
+            assessment_date=now,
+            created_at=now,
+            daily_consumption=240.0,
+            weekly_consumption=1680.0,
+            monthly_consumption=7200.0,
+            water_saver_score=63,
+            calculation_details={"daily_consumption": 240.0, "breakdown": []},
+        )
+        db.session.add(saved)
+        db.session.commit()
+
+        detail = client.get(f"/api/assessments/{saved.id}").get_json()["data"]
+        dashboard = client.get("/api/dashboard").get_json()["data"]
+        trends = client.get("/api/dashboard/trends").get_json()["data"]["trends"]
+        assert detail["water_saver_score"] == 63
+        assert dashboard["latest_water_saver_score"] == 63
+        assert trends[-1]["water_saver_score"] == 63
+        assert db.session.get(Assessment, saved.id).water_saver_score == 63
 
     def test_user_data_isolation(self, client, user_b, user_a_assessments):
         # User B should not see User A's data

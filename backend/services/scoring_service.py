@@ -3,8 +3,8 @@ AquaWise Deterministic Scoring & Gamification Service.
 
 Responsibilities:
 1. Calculate the Water Saver Score (0–100 integer) using pure deterministic rules.
-   - Household score is grounded in per-capita consumption vs CPHEEO benchmarks.
-   - Farmer score is grounded in irrigation technology efficiency and water-harvesting practices.
+   - Household score applies fixed rules to estimated per-capita use and reported habits.
+   - Farmer score applies fixed rules to reported irrigation practices.
    - The score is strictly reproducible, explainable, and independent of AI.
 2. Manage User Streaks:
    - Tracks consecutive days of water conservation activity.
@@ -71,12 +71,12 @@ def calculate_water_saver_score(
         household_size = max(1, int(float(details.get("household_size", 1))))
         lpcd = max(0.0, float(daily_consumption) / household_size)
 
-        # 2. Base score derived from LPCD against Indian urban benchmark (CPHEEO: 150 L/day)
+        # 2. Base score uses 150 L/person/day as a reference point.
         # lpcd <= 75  -> base 95-100 (exemplary conservation)
-        # lpcd = 150  -> base 70 (meets benchmark)
+        # lpcd = 150  -> base 70 (the reference point)
         # lpcd = 200  -> base 55 (high threshold)
         # lpcd = 300  -> base 30
-        # lpcd >= 450 -> base 10
+        # lpcd >= 450 -> base 5
         if lpcd <= 75.0:
             base_score = 100.0 - (lpcd / 75.0) * 5.0  # 95 to 100
         elif lpcd <= BENCHMARK_HOUSEHOLD_LPCD:  # 75 to 150
@@ -103,11 +103,13 @@ def calculate_water_saver_score(
             adjustments -= 5.0
 
         # Vehicle washing habits
-        veh_freq = float(details.get("vehicle_washing_frequency", 0.0))
-        if veh_freq == 0:
-            adjustments += 2.0
-        elif veh_freq >= 3.0:
-            adjustments -= 4.0
+        veh_freq_value = details.get("vehicle_washing_frequency")
+        if veh_freq_value is not None and veh_freq_value != "":
+            veh_freq = float(veh_freq_value)
+            if veh_freq == 0:
+                adjustments += 2.0
+            elif veh_freq >= 3.0:
+                adjustments -= 4.0
 
         # Kitchen efficiency
         kitchen_mins = float(details.get("kitchen_usage_minutes", 0.0))

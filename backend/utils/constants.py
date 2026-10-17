@@ -130,11 +130,11 @@ IRRIGATION_RATE_L_PER_HA_PER_HOUR = {
 IRRIGATION_RATE_DEFAULT = 2000.0    # litres per hectare per hour
 
 # ---------------------------------------------------------------------------
-# BENCHMARK: DAILY PER-CAPITA WATER USE
+# REFERENCE POINT: DAILY PER-CAPITA WATER USE
 # ---------------------------------------------------------------------------
 
-# Average daily per-capita water use considered "typical" for an Indian
-# household (urban).  Used for scoring, not for display as a hard target.
+# Product reference for the household score, not an individual target or
+# universal measure of the right amount of household use.
 # Reference: CPHEEO (Central Public Health and Environmental Engineering
 # Organisation) recommends 135–150 L per capita per day for urban India.
 BENCHMARK_HOUSEHOLD_LPCD = 150.0    # litres per capita per day
