@@ -34,6 +34,7 @@ from backend.utils.constants import (
     KITCHEN_TAP_FLOW_RATE_LPM,
     VEHICLE_WASH_HOSE_L,
     VEHICLE_WASH_BUCKET_L,
+    HOUSEHOLD_ASSESSMENT_DEFAULTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -198,6 +199,9 @@ def get_fallback_recommendations(
         for item in calculation_results.get("breakdown", [])
     }
     daily_total = float(calculation_results.get("daily_consumption", 0.0))
+
+    if user_type_norm == "household" and (assessment_data.get("assessment_version") == 2 or assessment_data.get("extended_answers")):
+        return _get_household_assessment_v2_recommendations(assessment_data, calculation_results, breakdown_map)
 
     if user_type_norm == "household":
         size = max(1, int(float(assessment_data.get("household_size", 1))))
@@ -408,6 +412,81 @@ def get_fallback_recommendations(
     # Sort descending by potential saving
     recommendations.sort(key=lambda r: r["potential_saving"], reverse=True)
     return recommendations
+
+
+def _get_household_assessment_v2_recommendations(assessment_data, calculation_results, breakdown_map):
+    """Return recommendations only when the submitted answers support them."""
+    answers = assessment_data.get("extended_answers") or {}
+    measures = set(answers.get("conservation_measures") or [])
+    recs = []
+
+    def add(category, title, reason, action, trigger, priority="medium", effort="low", saving=None, assumptions=None):
+        recs.append({
+            "category": category,
+            "title": title,
+            "description": f"{reason} Action: {action}",
+            "priority": priority,
+            "source": "rule_based",
+            "potential_saving": saving,
+            "evidence": {
+                "trigger": trigger,
+                "effort": effort,
+                "saving_basis": "illustrative scenario, not guaranteed" if saving is not None else None,
+                "assumptions": assumptions or [],
+            },
+        })
+
+    leak = answers.get("leak_status")
+    if leak in {"minor", "significant", "unsure"}:
+        fixture = answers.get("leak_fixture")
+        urgency = "Reported fixture: " + fixture if fixture else "Reported leak status: " + leak
+        add("Leaks", "Inspect and repair the reported leak", f"You reported {leak} leak concern" + (f" at {fixture}." if fixture else "."), "Check the fixture or arrange a plumbing inspection; no leakage volume is assumed.", urgency, "high" if leak in {"significant", "unsure"} else "medium", "moderate")
+
+    duration = _optional_float(answers.get("shower_duration_minutes"))
+    showers = _optional_float(answers.get("showers_per_person_per_day"))
+    if answers.get("bathing_method") in {"shower", "both"} and duration is not None and showers and duration >= 8:
+        size = max(1, int(float(assessment_data.get("household_size", 1))))
+        flow = _optional_float(answers.get("shower_flow_rate_lpm"))
+        assumptions = []
+        saving = None
+        if flow is None:
+            flow = HOUSEHOLD_ASSESSMENT_DEFAULTS["shower_flow_lpm"]
+            assumptions.append(f"Default flow {flow:g} L/min")
+        reduction = min(duration, HOUSEHOLD_ASSESSMENT_DEFAULTS["shower_scenario_reduction_minutes"])
+        saving = round(showers * reduction * flow * size, 1)
+        add("Bathing & showers", "Try a one-minute shorter shower", f"Your reported shower duration is {duration:g} minutes, and showers contribute to the measured estimate.", "Try reducing shower time by one minute and compare the next assessment.", "shower_duration_minutes", "medium", "low", saving, assumptions + ["Scenario assumes a one-minute duration reduction for each reported daily shower."])
+        if "low_flow_showerhead" not in measures:
+            add("Bathing & showers", "Check the shower flow rate", "The shower flow rate is a key driver of the bathing estimate.", "Measure flow with a timed container before deciding whether a lower-flow fixture is suitable.", "bathing_method and shower use", "low", "moderate")
+
+    if answers.get("tap_off_while_brushing") is False and "tap_aerators" not in measures:
+        add("Bathroom taps", "Turn off the tap while brushing", "You reported that the tap usually runs during brushing.", "Turn the tap off during brushing and shaving, then compare your next estimate.", "tap_off_while_brushing", "medium", "low")
+
+    if answers.get("toilet_type") == "standard" and "dual_flush_toilet" not in measures:
+        add("Toilet flushing", "Check whether a dual-flush upgrade fits", "You reported a standard-flush toilet.", "Confirm the fixture's actual flush volume and compatibility before considering an upgrade.", "toilet_type", "low", "moderate")
+
+    dish_method = answers.get("dishwashing_method")
+    if answers.get("has_dishwasher") is not True and (dish_method == "running_water" or answers.get("kitchen_tap_runs_while_washing") is True):
+        add("Kitchen & dishwashing", "Use a filled basin for dishwashing", "Your answers indicate that water runs while dishes are washed.", "Wash in a filled sink or basin where practical; kitchen preparation water is accounted for separately.", "dishwashing_method", "medium", "low")
+
+    if answers.get("laundry_full_loads") is False and (answers.get("laundry_loads_per_week") or 0) > 0:
+        add("Laundry", "Combine partial laundry loads", "You reported that laundry is often washed in partial loads.", "Group compatible items into a full load and use the machine's appropriate water setting.", "laundry_full_loads", "low", "low")
+
+    if answers.get("has_garden") is True and answers.get("garden_method") in {"hose", "sprinkler"}:
+        if "efficient_irrigation" not in measures:
+            add("Outdoor watering", "Review how the garden is watered", f"Your reported method is {answers.get('garden_method')}.", "Water when evaporation is lower and consider targeted watering only where it suits the plants and site.", "garden_method", "low", "low")
+
+    if not recs:
+        return []
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    recs.sort(key=lambda item: (priority_rank[item["priority"]], -(item["potential_saving"] or 0)))
+    return recs
+
+
+def _optional_float(value):
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------

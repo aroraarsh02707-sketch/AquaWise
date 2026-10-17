@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { profileService } from '../services/api';
 import Icon from '../components/Icon';
+import { PageHeading } from '../components/PagePrimitives';
 
 function formatDate(value) {
   if (!value) return '';
@@ -111,12 +112,10 @@ function Profile() {
   const accountType = profile?.user_type === 'farmer' ? 'Farmer' : 'Household';
 
   return (
-    <motion.main className="profile-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-      <header className="page-header profile-page-header">
-        <div><span className="profile-eyebrow">YOUR AQUAWISE ACCOUNT</span><h1>Profile & progress</h1><p className="subtitle">Manage your details and see how your conservation practice is growing.</p></div>
-      </header>
-
-      <section className="profile-identity" aria-labelledby="profile-identity-heading">
+    <motion.main className="profile-page rebuilt-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+      <PageHeading eyebrow="ACCOUNT / PROFILE & PROGRESS" title="Your conservation record." description="Manage your AquaWise details and track the habits you are building." />
+      <div className="profile-overview-grid">
+      <section className="profile-identity rebuilt-identity" aria-labelledby="profile-identity-heading">
         {profileLoading ? <LoadingState label="Loading your profile…" /> : profileError ? (
           <div className="profile-inline-error" role="alert"><Icon name="warning" size={20} /><span>{profileError}</span><button type="button" className="btn-secondary" onClick={loadProfile}>Try again</button></div>
         ) : (
@@ -129,7 +128,7 @@ function Profile() {
       </section>
 
       <section className="profile-settings-section" aria-labelledby="profile-settings-heading">
-        <div className="profile-section-heading"><div><span className="profile-eyebrow">ACCOUNT DETAILS</span><h2 id="profile-settings-heading">Personal information</h2><p>Update the information associated with your AquaWise account.</p></div></div>
+        <div className="profile-section-heading"><div><span className="eyebrow">ACCOUNT DETAILS</span><h2 id="profile-settings-heading">Personal information</h2><p>Update the information associated with your AquaWise account.</p></div></div>
         {profile && !profileError && <form onSubmit={handleSave} className="profile-settings-card">
           <div className="profile-form-grid">
             <div className="form-group"><label htmlFor="prof-name">Display name</label><input id="prof-name" type="text" autoComplete="name" value={formName} onChange={(event) => { setFormName(event.target.value); setSaveSuccess(false); }} maxLength={100} required disabled={saving} /><span className="profile-field-note">This is the name shown on your account.</span></div>
@@ -144,7 +143,7 @@ function Profile() {
       </section>
 
       {!profileLoading && !profileError && <section className="profile-statistics-section" aria-labelledby="profile-statistics-heading">
-        <div className="profile-section-heading"><div><span className="profile-eyebrow">YOUR CONSERVATION RECORD</span><h2 id="profile-statistics-heading">At a glance</h2></div></div>
+        <div className="profile-section-heading"><div><span className="eyebrow">YOUR CONSERVATION RECORD</span><h2 id="profile-statistics-heading">Activity at a glance</h2></div></div>
         <div className="profile-stats">
           <article className="profile-stat"><span className="profile-stat-icon"><Icon name="assessment" size={19} /></span><span className="profile-stat-value">{profile.assessment_count ?? 0}</span><span className="profile-stat-label">Assessments completed</span></article>
           <article className="profile-stat"><span className="profile-stat-icon"><Icon name="trend" size={19} /></span><span className="profile-stat-value">{profile.streak?.current_streak ?? 0}<small> days</small></span><span className="profile-stat-label">Current streak</span></article>
@@ -163,6 +162,7 @@ function Profile() {
           <div className="achievements-list">{[...achievements].sort((a, b) => Number(b?.unlocked === true) - Number(a?.unlocked === true)).map((achievement, index) => <AchievementCard key={achievement.id ?? `${achievement.name || 'achievement'}-${index}`} achievement={achievement} index={index} />)}</div>
         )}
       </section>
+      </div>
     </motion.main>
   );
 }

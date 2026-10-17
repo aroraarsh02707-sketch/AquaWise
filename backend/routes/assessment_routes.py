@@ -98,6 +98,7 @@ def create_assessment():
             weekly_consumption=calc_results["weekly_consumption"],
             monthly_consumption=calc_results["monthly_consumption"],
             water_saver_score=score,
+            calculation_details=calc_results,
         )
         db.session.add(assessment)
         db.session.flush()  # Allocate assessment.id
@@ -116,6 +117,7 @@ def create_assessment():
                 gardening_frequency=float(data.get("gardening_frequency", 0.0)),
                 gardening_duration_minutes=float(data.get("gardening_duration_minutes", 0.0)),
                 other_usage_litres=float(data.get("other_usage_litres", 0.0)),
+                extended_answers=data.get("extended_answers"),
             )
             db.session.add(details)
         else:
@@ -154,6 +156,7 @@ def create_assessment():
                 priority=rec.get("priority", "medium"),
                 source=rec.get("source", "rule_based"),
                 potential_saving=rec.get("potential_saving", 0.0),
+                evidence=rec.get("evidence"),
             )
             db.session.add(rec_entry)
 

@@ -46,18 +46,12 @@ function Register() {
   };
 
   return (
-    <motion.main className="auth-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
-      <section className="auth-panel" aria-labelledby="register-heading">
+    <motion.main className="auth-page auth-rebuild" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
+      <section className="auth-form-side" aria-labelledby="register-heading">
+        <Link to="/" className="auth-brand"><span className="auth-brand-mark"><Icon name="water" size={22}/></span><span>AquaWise</span><small>WATER INTELLIGENCE</small></Link>
         <div className="auth-form-shell register-form-shell">
-          <div className="auth-brand"><span className="auth-brand-mark"><Icon name="water" size={22} /></span><span>AquaWise</span></div>
-          <header className="auth-header">
-            <span className="auth-eyebrow">CREATE YOUR ACCOUNT</span>
-            <h1 id="register-heading">Get started with AquaWise</h1>
-            <p>Set up your profile to record and understand your water use.</p>
-          </header>
-
-          {error && <div id="register-error" className="auth-error" role="alert"><Icon name="warning" size={18} /><span>{error}</span></div>}
-
+          <header className="auth-header"><span className="auth-eyebrow">CREATE YOUR ACCOUNT</span><h1 id="register-heading">Make water count.</h1><p>Tell us a little about your water use so your workspace starts in the right place.</p></header>
+          {error && <div id="register-error" className="auth-error" role="alert"><Icon name="warning" size={18}/><span>{error}</span></div>}
           <form onSubmit={handleSubmit} className="auth-form register-form">
             <div className="form-group">
               <label htmlFor="name">Full name</label>
@@ -86,13 +80,11 @@ function Register() {
                 <input id="confirm_password" name="confirm_password" type="password" autoComplete="new-password" value={formData.confirm_password} onChange={handleChange} placeholder="Enter it again" minLength={6} maxLength={200} required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'register-error' : undefined} />
               </div>
             </div>
-            <button type="submit" className="btn-primary auth-submit" disabled={isSubmitting}>
-              {isSubmitting ? <><span className="spinner auth-button-spinner" aria-hidden="true" />Creating account…</> : 'Create account'}
-            </button>
+            <button type="submit" className="button button-primary auth-submit" disabled={isSubmitting}>{isSubmitting ? <><span className="spinner"/>Creating workspace…</> : <>Create your workspace <Icon name="arrowRight" size={17}/></>}</button>
           </form>
-
-          <p className="auth-footer">Already have an account? <Link to="/login">Sign in</Link></p>
+          <p className="auth-footer">Already have an account? <Link to="/login">Sign in <Icon name="arrowRight" size={14}/></Link></p>
         </div>
+        <span className="auth-legal">Private workspace · Your usage data stays connected to your account</span>
       </section>
       <AuthAside />
     </motion.main>

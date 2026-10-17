@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { assessmentService } from '../services/api';
 import Icon from '../components/Icon';
+import { PageHeading } from '../components/PagePrimitives';
+import HouseholdAssessment from './HouseholdAssessment';
 
 const householdSteps = [
   {
@@ -89,7 +91,7 @@ const formatValue = (field, value) => {
   return value;
 };
 
-const Assessment = () => {
+const FarmerAssessment = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isHousehold = user?.user_type === 'household';
@@ -182,7 +184,7 @@ const Assessment = () => {
         return;
       }
 
-      navigate(`/recommendations/${assessmentId}`);
+      navigate('/dashboard');
     } catch (error) {
       const details = error.response?.data?.error?.details;
       if (!applyValidationErrors(details)) {
@@ -244,116 +246,29 @@ const Assessment = () => {
   };
 
   return (
-    <motion.div className="assessment-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-      <header className="page-header assessment-page-header">
-        <div>
-          <p className="assessment-eyebrow">WATER USE CHECK-IN</p>
-          <h1>Water usage assessment</h1>
-          <p className="subtitle">A few details help us build a useful picture of your {isHousehold ? 'household' : 'farm'} water use.</p>
-        </div>
-        <Link to="/dashboard" className="assessment-cancel-link">Back to overview</Link>
-      </header>
-
-      <section className="assessment-container" aria-label={`${isHousehold ? 'Household' : 'Farm'} water assessment`}>
-        <div className="assessment-type-notice">
-          <span className="assessment-type-icon"><Icon name={isHousehold ? 'water' : 'assessment'} size={19} /></span>
-          <div>
-            <strong>{isHousehold ? 'Household assessment' : 'Farm assessment'}</strong>
-            <p>This follows the account type on your profile. You can update it from Profile.</p>
-          </div>
-        </div>
-
-        <div className="assessment-progress">
-          <div className="assessment-progress-copy">
-            <span>Step {currentStep + 1} of {steps.length}</span>
-            <span>{currentStep === steps.length - 1 ? 'Final step' : `${steps.length - currentStep - 1} step${steps.length - currentStep - 1 === 1 ? '' : 's'} remaining`}</span>
-          </div>
-          <div className="assessment-progress-track" role="progressbar" aria-label="Assessment progress" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={currentStep + 1} aria-valuetext={`Step ${currentStep + 1} of ${steps.length}`}>
-            <span style={{ width: `${progress}%` }} />
-          </div>
-          <div className="assessment-step-labels" aria-hidden="true">
-            {steps.map((step, index) => (
-              <span className={index <= currentStep ? 'complete' : ''} key={step.title}>{step.title}</span>
-            ))}
-          </div>
-        </div>
-
-        <form ref={formRef} className="assessment-form" onSubmit={handleSubmit} aria-busy={isSubmitting}>
-          {formError && (
-            <div className="assessment-form-error" role="alert">
-              <Icon name="warning" size={17} />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.section
-              className="assessment-step"
-              key={activeStep.title}
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={{ duration: 0.16 }}
-              onAnimationComplete={() => {
-                if (shouldFocusStep.current) {
-                  headingRef.current?.focus();
-                  shouldFocusStep.current = false;
-                }
-              }}
-              aria-labelledby="assessment-step-title"
-            >
-              <div className="assessment-step-heading">
-                <h3 id="assessment-step-title" ref={headingRef} tabIndex={-1}>{activeStep.title}</h3>
-                <p>{activeStep.description}</p>
-              </div>
-              <div className="assessment-fields-grid">
-                {activeStep.fields.map(renderField)}
-              </div>
-
-              {currentStep === steps.length - 1 && (
-                <div className="assessment-review" aria-labelledby="assessment-review-title">
-                  <div className="assessment-review-heading">
-                    <span><Icon name="assessment" size={17} /></span>
-                    <div>
-                      <h4 id="assessment-review-title">Before you submit</h4>
-                      <p>Review the information entered. Your water estimate is calculated after submission.</p>
-                    </div>
-                  </div>
-                  <dl className="assessment-review-list">
-                    {steps.flatMap((step) => step.fields).map((field) => (
-                      <div className="assessment-review-item" key={field.name}>
-                        <dt>{field.label}</dt>
-                        <dd>{formatValue(field, formData[field.name])}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              )}
-            </motion.section>
-          </AnimatePresence>
-
-          <div className="assessment-navigation">
-            {currentStep > 0 ? (
-              <button type="button" className="btn-secondary" onClick={goToPreviousStep} disabled={isSubmitting}>
-                <Icon name="arrowLeft" size={17} /> Back
-              </button>
-            ) : (
-              <span className="assessment-nav-note">Fields marked required must be completed.</span>
-            )}
-            {currentStep < steps.length - 1 ? (
-              <button type="button" className="btn-primary" onClick={goToNextStep} disabled={isSubmitting}>
-                Continue <Icon name="arrowRight" size={17} />
-              </button>
-            ) : (
-              <button type="submit" className="btn-primary assessment-submit" disabled={isSubmitting}>
-                {isSubmitting ? <><span className="spinner assessment-submit-spinner" />Saving assessment…</> : <>Submit assessment <Icon name="arrowRight" size={17} /></>}
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
+    <motion.div className="assessment-page rebuilt-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+      <PageHeading eyebrow="WATER USE / NEW ASSESSMENT" title="Build your water profile." description={`A few details help us estimate your ${isHousehold ? 'household' : 'farm'} use and surface practical opportunities.`} action={<Link to="/dashboard" className="quiet-link"><Icon name="arrowLeft" size={16}/> Leave assessment</Link>} />
+      <div className="assessment-layout">
+        <aside className="assessment-guide"><span className="guide-icon"><Icon name={isHousehold ? 'water' : 'assessment'} size={22}/></span><span className="eyebrow">{isHousehold ? 'HOUSEHOLD PROFILE' : 'FARM PROFILE'}</span><h2>{isHousehold ? 'Everyday water, made visible.' : 'A more informed growing season.'}</h2><p>{isHousehold ? 'Estimate the routines that shape your household’s daily water use.' : 'Describe your field and irrigation practices to estimate water demand.'}</p><div className="guide-checklist"><span><i>01</i>{steps[0].title}</span><span><i>02</i>{steps[1].title}</span></div><Link to="/profile" className="guide-profile-link">Change account type <Icon name="arrowRight" size={15}/></Link></aside>
+        <section className="assessment-workspace" aria-label={`${isHousehold ? 'Household' : 'Farm'} water assessment`}>
+          <div className="assessment-workspace-head"><div><span className="eyebrow">STEP {String(currentStep + 1).padStart(2, '0')} <span>/ {String(steps.length).padStart(2, '0')}</span></span><h2>{activeStep.title}</h2></div><span className="step-remaining">{currentStep === steps.length - 1 ? 'Final step' : `${steps.length - currentStep - 1} step${steps.length - currentStep - 1 === 1 ? '' : 's'} remaining`}</span></div>
+          <div className="assessment-step-meter" role="progressbar" aria-label="Assessment progress" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={currentStep + 1}><span style={{ width: `${progress}%` }} /></div>
+          <form ref={formRef} className="assessment-form rebuilt-assessment-form" onSubmit={handleSubmit} aria-busy={isSubmitting}>
+            {formError && <div className="inline-alert alert-danger" role="alert"><Icon name="warning" size={17}/>{formError}</div>}
+            <AnimatePresence mode="wait" initial={false}><motion.section className="assessment-step" key={activeStep.title} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.16 }} onAnimationComplete={() => { if (shouldFocusStep.current) { headingRef.current?.focus(); shouldFocusStep.current = false; } }} aria-labelledby="assessment-step-title">
+              <p className="step-intro" id="assessment-step-title" ref={headingRef} tabIndex={-1}>{activeStep.description}</p>
+              <div className="assessment-fields-grid">{activeStep.fields.map(renderField)}</div>
+              {currentStep === steps.length - 1 && <div className="assessment-review"><div className="review-heading"><span className="eyebrow">REVIEW BEFORE SAVING</span><h3>Your answers</h3><p>Your water estimate is calculated after submission.</p></div><dl className="assessment-review-list">{steps.flatMap((step) => step.fields).map((field) => <div className="assessment-review-item" key={field.name}><dt>{field.label}</dt><dd>{formatValue(field, formData[field.name])}</dd></div>)}</dl></div>}
+            </motion.section></AnimatePresence>
+            <div className="assessment-navigation">{currentStep > 0 ? <button type="button" className="button button-quiet" onClick={goToPreviousStep} disabled={isSubmitting}><Icon name="arrowLeft" size={17}/> Previous</button> : <span className="field-footnote">Required fields are marked.</span>}{currentStep < steps.length - 1 ? <button type="button" className="button button-primary" onClick={goToNextStep} disabled={isSubmitting}>Continue <Icon name="arrowRight" size={17}/></button> : <button type="submit" className="button button-primary" disabled={isSubmitting}>{isSubmitting ? <><span className="spinner"/>Saving your profile…</> : <>Calculate water use <Icon name="arrowRight" size={17}/></>}</button>}</div>
+          </form>
+        </section>
+      </div>
     </motion.div>
   );
 };
 
-export default Assessment;
+export default function Assessment() {
+  const { user } = useAuth();
+  return user?.user_type === 'household' ? <HouseholdAssessment /> : <FarmerAssessment />;
+}

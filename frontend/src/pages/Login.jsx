@@ -34,34 +34,16 @@ function Login() {
   };
 
   return (
-    <motion.main className="auth-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
-      <section className="auth-panel" aria-labelledby="login-heading">
+    <motion.main className="auth-page auth-rebuild" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
+      <section className="auth-form-side" aria-labelledby="login-heading">
+        <Link to="/" className="auth-brand"><span className="auth-brand-mark"><Icon name="water" size={22}/></span><span>AquaWise</span><small>WATER INTELLIGENCE</small></Link>
         <div className="auth-form-shell">
-          <div className="auth-brand"><span className="auth-brand-mark"><Icon name="water" size={22} /></span><span>AquaWise</span></div>
-          <header className="auth-header">
-            <span className="auth-eyebrow">YOUR CONSERVATION WORKSPACE</span>
-            <h1 id="login-heading">Welcome back</h1>
-            <p>Sign in to continue to your AquaWise account.</p>
-          </header>
-
-          {error && <div id="login-error" className="auth-error" role="alert"><Icon name="warning" size={18} /><span>{error}</span></div>}
-
-          <form onSubmit={handleSubmit} className="auth-form">
-            <div className="form-group">
-              <label htmlFor="email">Email address</label>
-              <input id="email" type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(''); }} placeholder="name@example.com" required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined} />
-            </div>
-            <div className="form-group">
-              <label htmlFor="password">Password</label>
-              <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} placeholder="Enter your password" required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined} />
-            </div>
-            <button type="submit" className="btn-primary auth-submit" disabled={isSubmitting}>
-              {isSubmitting ? <><span className="spinner auth-button-spinner" aria-hidden="true" />Signing in…</> : 'Sign in'}
-            </button>
-          </form>
-
-          <p className="auth-footer">New to AquaWise? <Link to="/register">Create an account</Link></p>
+          <header className="auth-header"><span className="auth-eyebrow">YOUR CONSERVATION WORKSPACE</span><h1 id="login-heading">Welcome back.</h1><p>Sign in to return to your water-use insights and recommendations.</p></header>
+          {error && <div id="login-error" className="auth-error" role="alert"><Icon name="warning" size={18}/><span>{error}</span></div>}
+          <form onSubmit={handleSubmit} className="auth-form"><div className="form-group"><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(''); }} placeholder="you@example.com" required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined}/></div><div className="form-group"><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} placeholder="Your password" required disabled={isSubmitting} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined}/></div><button type="submit" className="button button-primary auth-submit" disabled={isSubmitting}>{isSubmitting ? <><span className="spinner"/>Signing in…</> : <>Continue to AquaWise <Icon name="arrowRight" size={17}/></>}</button></form>
+          <p className="auth-footer">New to AquaWise? <Link to="/register">Create an account <Icon name="arrowRight" size={14}/></Link></p>
         </div>
+        <span className="auth-legal">Private workspace · Your usage data stays connected to your account</span>
       </section>
       <AuthAside />
     </motion.main>

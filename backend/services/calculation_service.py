@@ -57,6 +57,7 @@ from backend.utils.constants import (
     # Time constants
     DAYS_IN_WEEK,
     DAYS_IN_MONTH,
+    HOUSEHOLD_ASSESSMENT_DEFAULTS,
 )
 
 
@@ -152,6 +153,9 @@ def calculate_household_consumption(data: dict) -> dict:
     - Laundry, vehicle, gardening are weekly activities converted to daily.
     - If optional fields are absent (0 or None), they contribute 0 L/day.
     """
+    if data.get("assessment_version") == 2 or data.get("extended_answers"):
+        return calculate_household_assessment_v2(data)
+
     size = max(1, int(_safe_float(data.get("household_size"), 1)))
 
     # --- Bathing ---
@@ -205,6 +209,238 @@ def calculate_household_consumption(data: dict) -> dict:
 
     daily, breakdown = _build_breakdown(category_litres)
     return _result(daily, breakdown)
+
+
+def _optional_number(value):
+    """Return a finite non-negative value, or None when the answer is unknown."""
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 and number < float("inf") else None
+
+
+def calculate_household_assessment_v2(data: dict) -> dict:
+    """Calculate a household assessment from explicit answers and disclosed defaults.
+
+    Categories with insufficient data are omitted from ``breakdown``; they are
+    not silently treated as zero. A zero only contributes when the user
+    explicitly entered zero or selected a not-applicable answer.
+    """
+    answers = data.get("extended_answers") or {}
+    size = max(1, int(_safe_float(data.get("household_size"), 1)))
+    defaults = HOUSEHOLD_ASSESSMENT_DEFAULTS
+    category_values: dict[str, float] = {}
+    category_sources: dict[str, str] = {}
+    assumptions: list[str] = []
+
+    def add(category, value, source="user"):
+        if value is not None:
+            category_values[category] = max(0.0, float(value))
+            category_sources[category] = source
+
+    def assumed(key, label):
+        assumptions.append(f"{label}: {defaults[key]}")
+        return float(defaults[key])
+
+    # 1. Bathing: shower and bucket-bath components are added only when selected.
+    method = answers.get("bathing_method", "shower")
+    bath_total = 0.0
+    bath_available = True
+    bath_source = "user"
+    if method in {"shower", "both"}:
+        count = _optional_number(answers.get("showers_per_person_per_day"))
+        duration = _optional_number(answers.get("shower_duration_minutes"))
+        if count is None or duration is None:
+            bath_available = False
+        elif count > 0 and duration > 0:
+            flow = _optional_number(answers.get("shower_flow_rate_lpm"))
+            if flow is None:
+                flow = assumed("shower_flow_lpm", "Default shower flow (L/min)")
+                bath_source = "assumption"
+            bath_total += count * duration * flow * size
+    if method in {"bucket", "both"}:
+        baths = _optional_number(answers.get("bucket_baths_per_person_per_day"))
+        buckets = _optional_number(answers.get("buckets_per_bath"))
+        if baths is None or buckets is None:
+            bath_available = False
+        elif baths > 0 and buckets > 0:
+            capacity = _optional_number(answers.get("bucket_capacity_litres"))
+            if capacity is None:
+                capacity = assumed("bucket_capacity_l", "Default bucket capacity (L)")
+                bath_source = "assumption"
+            bath_total += baths * buckets * capacity * size
+    if method in {"shower", "bucket", "both"} and bath_available:
+        add("Bathing & showers", bath_total, bath_source)
+
+    # 2. Toilet: specific known flush volumes override configurable type defaults.
+    flushes = _optional_number(answers.get("toilet_flushes_per_person_per_day"))
+    if flushes is not None:
+        flush_volume = _optional_number(answers.get("toilet_flush_volume_litres"))
+        source = "user"
+        if flush_volume is None:
+            toilet_type = answers.get("toilet_type", "unknown")
+            flush_volume = float(defaults["toilet_flush_l"].get(toilet_type, defaults["toilet_flush_l"]["unknown"]))
+            assumptions.append(f"Default {toilet_type.replace('_', ' ')} toilet flush volume: {flush_volume:g} L/flush")
+            source = "assumption"
+        add("Toilet flushing", flushes * flush_volume * size, source)
+
+    # 3. Bathroom taps: daily minutes per resident × configurable/known flow.
+    tap_minutes = _optional_number(answers.get("bathroom_tap_minutes_per_person_per_day"))
+    if tap_minutes is not None:
+        tap_flow = _optional_number(answers.get("bathroom_tap_flow_rate_lpm"))
+        source = "user"
+        if tap_flow is None:
+            tap_flow = assumed("tap_flow_lpm", "Default bathroom tap flow (L/min)")
+            source = "assumption"
+        add("Bathroom taps", tap_minutes * tap_flow * size, source)
+
+    # 4. Kitchen and dishwashing. Kitchen prep minutes exclude dishwashing;
+    # dishwasher cycles replace (rather than add to) manual dishwashing.
+    kitchen_minutes = _optional_number(answers.get("kitchen_tap_minutes_per_day"))
+    dish_mode = answers.get("dishwashing_method")
+    dishwasher = answers.get("has_dishwasher") is True
+    kitchen_known = kitchen_minutes is not None
+    kitchen_litres = 0.0
+    kitchen_source = "user"
+    if kitchen_minutes is not None:
+        flow = _optional_number(answers.get("kitchen_tap_flow_rate_lpm"))
+        if kitchen_minutes > 0 and flow is None:
+            flow = assumed("tap_flow_lpm", "Default kitchen tap flow (L/min)")
+            kitchen_source = "assumption"
+        kitchen_litres += kitchen_minutes * (flow or 0)
+    if dishwasher:
+        cycles = _optional_number(answers.get("dishwasher_cycles_per_week"))
+        if cycles is None:
+            kitchen_known = False
+        elif cycles > 0:
+            per_cycle = _optional_number(answers.get("dishwasher_litres_per_cycle"))
+            if per_cycle is None:
+                per_cycle = assumed("dishwasher_l_per_cycle", "Default dishwasher use (L/cycle)")
+                kitchen_source = "assumption"
+            kitchen_litres += cycles * per_cycle / DAYS_IN_WEEK
+    elif dish_mode == "running_water":
+        dish_minutes = _optional_number(answers.get("dishwashing_tap_minutes_per_day"))
+        if dish_minutes is None:
+            kitchen_known = False
+        elif dish_minutes > 0:
+            flow = _optional_number(answers.get("kitchen_tap_flow_rate_lpm"))
+            if flow is None:
+                flow = assumed("tap_flow_lpm", "Default kitchen tap flow (L/min)")
+                kitchen_source = "assumption"
+            kitchen_litres += dish_minutes * flow
+    elif not dishwasher and dish_mode == "basin":
+        basin_volume = _optional_number(answers.get("dishwashing_litres_per_day"))
+        if basin_volume is None:
+            kitchen_known = False
+        else:
+            kitchen_litres += basin_volume
+    elif not dishwasher and dish_mode == "other":
+        other_volume = _optional_number(answers.get("dishwashing_litres_per_day"))
+        if other_volume is None:
+            kitchen_known = False
+        else:
+            kitchen_litres += other_volume
+    else:
+        kitchen_known = False
+    if kitchen_known:
+        add("Kitchen & dishwashing", kitchen_litres, kitchen_source)
+
+    # 5. Laundry: machine default is configurable; hand washing requires a supplied volume.
+    loads = _optional_number(answers.get("laundry_loads_per_week"))
+    laundry_method = answers.get("laundry_method")
+    if loads is not None:
+        if loads == 0:
+            add("Laundry", 0)
+        elif laundry_method in {"front_load", "top_load", "other_machine"}:
+            per_load = _optional_number(answers.get("laundry_litres_per_load"))
+            source = "user"
+            if per_load is None:
+                per_load = assumed("machine_laundry_l_per_load", "Default washing-machine use (L/load)")
+                source = "assumption"
+            add("Laundry", loads * per_load / DAYS_IN_WEEK, source)
+        elif laundry_method == "hand_wash":
+            per_load = _optional_number(answers.get("handwash_litres_per_load"))
+            if per_load is None:
+                buckets = _optional_number(answers.get("handwash_buckets_per_load"))
+                if buckets is not None:
+                    capacity = _optional_number(answers.get("handwash_bucket_capacity_litres"))
+                    if capacity is None:
+                        capacity = assumed("bucket_capacity_l", "Default laundry bucket capacity (L)")
+                    per_load = buckets * capacity
+            if per_load is not None:
+                add("Laundry", loads * per_load / DAYS_IN_WEEK)
+
+    # 6. Cleaning: hoses use flow × duration; other methods need a session volume.
+    cleaning_frequency = _optional_number(answers.get("cleaning_sessions_per_week"))
+    cleaning_method = answers.get("cleaning_method")
+    if cleaning_frequency is not None:
+        if cleaning_frequency == 0:
+            add("Household cleaning", 0)
+        elif cleaning_method == "hose":
+            minutes = _optional_number(answers.get("cleaning_minutes_per_session"))
+            if minutes is not None:
+                flow = _optional_number(answers.get("cleaning_flow_rate_lpm"))
+                source = "user"
+                if flow is None:
+                    flow = assumed("hose_flow_lpm", "Default hose flow (L/min)")
+                    source = "assumption"
+                add("Household cleaning", cleaning_frequency * minutes * flow / DAYS_IN_WEEK, source)
+        else:
+            volume = _optional_number(answers.get("cleaning_litres_per_session"))
+            if volume is not None:
+                add("Household cleaning", cleaning_frequency * volume / DAYS_IN_WEEK)
+
+    # 7. Outdoor watering: can volumes are user-entered; timed methods use a disclosed flow default.
+    has_garden = answers.get("has_garden")
+    garden_frequency = _optional_number(answers.get("garden_sessions_per_week"))
+    garden_method = answers.get("garden_method")
+    if has_garden is False:
+        add("Outdoor watering", 0)
+    elif has_garden is True and garden_frequency is not None:
+        if garden_frequency == 0:
+            add("Outdoor watering", 0)
+        elif garden_method == "watering_can":
+            volume = _optional_number(answers.get("garden_litres_per_session"))
+            if volume is not None:
+                add("Outdoor watering", garden_frequency * volume / DAYS_IN_WEEK)
+        elif garden_method in {"hose", "sprinkler", "drip"}:
+            minutes = _optional_number(answers.get("garden_minutes_per_session"))
+            if minutes is not None:
+                flow = _optional_number(answers.get("garden_flow_rate_lpm"))
+                source = "user"
+                if flow is None:
+                    key = {"hose": "hose_flow_lpm", "sprinkler": "sprinkler_flow_lpm", "drip": "drip_flow_lpm"}[garden_method]
+                    flow = assumed(key, f"Default {garden_method} flow (L/min)")
+                    source = "assumption"
+                add("Outdoor watering", garden_frequency * minutes * flow / DAYS_IN_WEEK, source)
+
+    daily, breakdown = _build_breakdown(category_values)
+    category_order = ["Bathing & showers", "Toilet flushing", "Bathroom taps", "Kitchen & dishwashing", "Laundry", "Household cleaning", "Outdoor watering"]
+    unavailable = [name for name in category_order if name not in category_values]
+    user_categories = sum(1 for source in category_sources.values() if source == "user")
+    assumed_categories = len(category_sources) - user_categories
+    user_input_litres = sum(category_values[name] for name, source in category_sources.items() if source == "user")
+    assumption_litres = sum(category_values[name] for name, source in category_sources.items() if source == "assumption")
+    result = _result(daily, breakdown)
+    result.update({
+        "daily_per_person": round(daily / size, 2),
+        "estimate_kind": "rough" if unavailable or assumptions else "input_based estimate",
+        "category_count": len(category_values),
+        "category_total": len(category_order),
+        "unavailable_categories": unavailable,
+        "user_input_categories": user_categories,
+        "assumption_categories": assumed_categories,
+        "user_input_litres_per_day": round(user_input_litres, 2),
+        "assumption_litres_per_day": round(assumption_litres, 2),
+        "category_sources": category_sources,
+        "assumptions": assumptions,
+        "assumption_disclaimer": "Defaults are configurable product estimates. Actual use depends on fixtures, behavior, and local conditions; a meter or measured flow rate improves accuracy.",
+        "calculation_version": 2,
+    })
+    return result
 
 
 # ---------------------------------------------------------------------------

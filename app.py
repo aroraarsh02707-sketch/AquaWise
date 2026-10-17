@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 from flask import Flask, jsonify, render_template, request
 from flask_login import LoginManager
+from sqlalchemy import inspect
 from config import config
 from backend.models import db, User, Achievement
 from backend.routes.auth_routes import auth_bp
@@ -146,6 +147,25 @@ def create_app(config_name=None):
         """Seed default achievements."""
         seed_achievements()
         print("Default achievements seeded successfully.")
+
+    @app.cli.command("migrate-household-assessment-v2")
+    def migrate_household_assessment_v2():
+        """Add nullable V2 assessment metadata columns without changing old rows."""
+        additions = {
+            "assessments": {"calculation_details": "JSON"},
+            "household_usage_details": {"extended_answers": "JSON"},
+            "recommendations": {"evidence": "JSON"},
+        }
+        inspector = inspect(db.engine)
+        with db.engine.begin() as connection:
+            for table, columns in additions.items():
+                if not inspector.has_table(table):
+                    raise RuntimeError(f"Required table {table} is missing; initialize the database first.")
+                present = {column["name"] for column in inspector.get_columns(table)}
+                for column, column_type in columns.items():
+                    if column not in present:
+                        connection.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {column_type} NULL"))
+        print("Household assessment V2 schema is ready. Existing records were preserved.")
 
     # Health Check API
     @app.route("/api/health", methods=["GET"])

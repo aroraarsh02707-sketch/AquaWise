@@ -152,3 +152,24 @@ HIGH_CATEGORY_SHARE_PERCENT = 30.0  # %
 
 DAYS_IN_WEEK = 7
 DAYS_IN_MONTH = 30
+
+# Version 2 household assessment defaults. Values are configurable product
+# assumptions, not universal household benchmarks. Results disclose every
+# default used. Replace these with locally validated values where available.
+HOUSEHOLD_ASSESSMENT_DEFAULTS = {
+    "shower_flow_lpm": SHOWER_FLOW_RATE_LPM,
+    "bucket_capacity_l": BUCKET_BATH_VOLUME_L,
+    "toilet_flush_l": {
+        "standard": TOILET_FLUSH_STANDARD_L,
+        "dual_flush": TOILET_FLUSH_EFFICIENT_L,
+        "low_flow": TOILET_FLUSH_EFFICIENT_L,
+        "unknown": TOILET_FLUSH_DEFAULT_L,
+    },
+    "tap_flow_lpm": KITCHEN_TAP_FLOW_RATE_LPM,
+    "dishwasher_l_per_cycle": DISHWASHER_WATER_PER_CYCLE_L,
+    "machine_laundry_l_per_load": LAUNDRY_WATER_PER_LOAD_L,
+    "hose_flow_lpm": GARDENING_HOSE_FLOW_RATE_LPM,
+    "sprinkler_flow_lpm": GARDENING_SPRINKLER_FLOW_RATE_LPM,
+    "drip_flow_lpm": GARDENING_DRIP_FLOW_RATE_LPM,
+    "shower_scenario_reduction_minutes": 1.0,
+}

@@ -3,15 +3,9 @@ import Icon from './Icon';
 
 export default function AuthAside() {
   return (
-    <aside className="auth-aside" aria-label="About AquaWise">
-      <div className="auth-aside-content">
-        <span className="auth-aside-mark" aria-hidden="true"><Icon name="water" size={38} /></span>
-        <span className="auth-aside-eyebrow">WATER CONSERVATION WORKSPACE</span>
-        <h2>Make your water use easier to understand.</h2>
-        <p>Record household or farm water habits, review estimated consumption, and explore practical conservation recommendations.</p>
-        <div className="auth-aside-rule" />
-        <span className="auth-aside-caption">AquaWise · Measure thoughtfully. Conserve confidently.</span>
-      </div>
+    <aside className="auth-aside auth-story" aria-label="About AquaWise">
+      <div className="auth-story-copy"><span className="auth-aside-eyebrow">A BETTER RELATIONSHIP WITH WATER</span><h2>See the system.<br/><em>Change the story.</em></h2><p>Bring everyday habits and growing practices into focus. AquaWise helps make the next step understandable.</p><div className="story-principles"><span><i>01</i>Measure with context</span><span><i>02</i>Find where it matters</span><span><i>03</i>Make progress visible</span></div></div>
+      <div className="story-art" aria-hidden="true"><div className="story-art-grid"/><div className="story-waterline line-one"/><div className="story-waterline line-two"/><div className="story-waterline line-three"/><span className="story-art-drop"><Icon name="water" size={46}/></span><span className="story-art-caption">AQUAWISE / WATER INTELLIGENCE</span></div>
     </aside>
   );
 }

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { assistantService } from '../services/api';
 import Icon from '../components/Icon';
+import { PageHeading } from '../components/PagePrimitives';
 
 const suggestions = [
   'Where could I save water at home?',
@@ -165,13 +166,9 @@ function Assistant() {
   const isEmpty = messages.length === 0;
 
   return (
-    <motion.main className="assistant-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-      <header className="page-header assistant-page-header">
-        <div><span className="chat-eyebrow">AQUAWISE · CONSERVATION COMPANION</span><h1>Water, made clearer.</h1><p className="subtitle">Explore practical ways to understand and reduce your water use.</p></div>
-        <div className="chat-page-links"><Link to="/dashboard">Dashboard <Icon name="arrowRight" size={16} /></Link><Link to="/recommendations">Recommendations <Icon name="arrowRight" size={16} /></Link></div>
-      </header>
-
-      <section className="chat-workspace" aria-label="AquaWise assistant">
+    <motion.main className="assistant-page rebuilt-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+      <PageHeading eyebrow="AQUAWISE / WATER ASSISTANT" title="A thoughtful place to ask." description="Explore practical conservation questions. For measured usage and tailored actions, open your assessment and plan." action={<button type="button" className="button button-quiet chat-history-toggle" onClick={() => setMobileHistoryOpen(true)}><Icon name="menu" size={17}/> Conversation history</button>} />
+      <section className="chat-workspace rebuilt-chat" aria-label="AquaWise assistant">
         <AnimatePresence>
           {mobileHistoryOpen && <motion.button type="button" className="chat-history-backdrop" aria-label="Close conversation history" onClick={() => setMobileHistoryOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
         </AnimatePresence>
@@ -181,18 +178,16 @@ function Assistant() {
 
         <div className="chat-main">
           <div className="chat-conversation-header">
-            <button type="button" className="chat-history-toggle" onClick={() => setMobileHistoryOpen(true)} aria-label="Open conversation history"><Icon name="menu" size={19} /><span>History</span></button>
-            <div className="chat-current-title"><span className="chat-status-mark" /><div><span className="chat-current-label">CURRENT CONVERSATION</span><h2>{activeTitle}</h2></div></div>
-            <span className="chat-assistant-tag"><Icon name="water" size={15} /> AquaWise</span>
+            <div className="chat-current-title"><span className="chat-status-mark" /><div><span className="chat-current-label">CONVERSATION</span><h2>{activeTitle}</h2></div></div>
+            <button type="button" className="button button-quiet chat-new-inline" onClick={startNewConversation}><span aria-hidden="true">+</span> New conversation</button>
           </div>
 
           <div className="chat-messages" aria-live="polite" aria-relevant="additions text" aria-busy={loadingConv || sending}>
             {loadingConv ? <div className="chat-loading-state" role="status"><span className="spinner" /><p>Opening conversation…</p></div> : isEmpty ? (
               <div className="chat-empty-state">
-                <span className="chat-empty-icon"><Icon name="water" size={27} /></span>
-                <span className="chat-section-label">AQUAWISE ASSISTANT</span>
-                <h3>What would you like to understand?</h3>
-                <p>Ask about everyday conservation. For your measured usage and tailored actions, visit your assessment and recommendations.</p>
+                <span className="chat-section-label">ASK AQUAWISE</span>
+                <h3>Where should we start?</h3>
+                <p>Get a useful explanation or explore a conservation idea. Your profile remains the source for recorded water use.</p>
                 <div className="chat-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} className="chat-suggestion-btn" onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}>{suggestion}<Icon name="arrowRight" size={16} /></button>)}</div>
                 <Link className="chat-assessment-link" to="/assessment">View your water assessment <Icon name="arrowRight" size={16} /></Link>
               </div>
@@ -203,7 +198,7 @@ function Assistant() {
           <AnimatePresence>{error && <motion.div className="chat-error" role="alert" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }}><Icon name="warning" size={18} /><span>{error}</span>{input.trim() && <button type="button" onClick={sendMessage} disabled={sending}>Retry</button>}</motion.div>}</AnimatePresence>
 
           <form className="chat-input-area" onSubmit={sendMessage}>
-            <label className="chat-composer-label" htmlFor="assistant-message">YOUR MESSAGE</label>
+            <label className="chat-composer-label" htmlFor="assistant-message">YOUR QUESTION</label>
             <div className="chat-composer-row">
               <textarea id="assistant-message" ref={inputRef} className="chat-input" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Ask a question about water conservation…" rows={2} disabled={sending || loadingConv} />
               <button type="submit" className="chat-send-btn" disabled={!input.trim() || sending || loadingConv} aria-label={sending ? 'Sending message' : 'Send message'}>{sending ? <span className="spinner" /> : <Icon name="arrowRight" size={20} />}</button>

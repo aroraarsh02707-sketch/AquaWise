@@ -1,143 +1,40 @@
-import React, { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React, { useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 
-const primaryLinks = [
-  { name: 'Overview', path: '/dashboard', icon: 'dashboard' },
-  { name: 'Assessment', path: '/assessment', icon: 'assessment' },
-  { name: 'Recommendations', path: '/recommendations', icon: 'recommendations' },
-  { name: 'Water assistant', path: '/assistant', icon: 'assistant' },
+const links = [
+  { label: 'Overview', path: '/dashboard', icon: 'dashboard' },
+  { label: 'Assess water use', path: '/assessment', icon: 'assessment' },
+  { label: 'History', path: '/recommendations', icon: 'history' },
+  { label: 'Water assistant', path: '/assistant', icon: 'assistant' },
 ];
+const titles = { '/dashboard': 'Overview', '/assessment': 'Assessment', '/recommendations': 'History', '/assistant': 'Water assistant', '/profile': 'Your profile' };
 
-const AppLayout = () => {
+export default function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
-
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 768px)');
-    const handleViewportChange = (event) => {
-      setIsMobile(event.matches);
-      if (!event.matches) setMobileMenuOpen(false);
-    };
-    media.addEventListener('change', handleViewportChange);
-    return () => media.removeEventListener('change', handleViewportChange);
-  }, []);
-
-  useEffect(() => {
-    if (!mobileMenuOpen) return undefined;
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setMobileMenuOpen(false);
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [mobileMenuOpen]);
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-
-  const closeMobileMenu = () => setMobileMenuOpen(false);
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const title = location.pathname.startsWith('/recommendations/') ? 'Action plan' : (titles[location.pathname] || 'AquaWise');
+  const handleLogout = async () => { await logout(); navigate('/login'); };
 
   return (
-    <div className="app-layout">
-      <header className="mobile-header">
-        <div className="mobile-brand">
-          <Icon name="water" size={23} />
-          <span className="logo">AquaWise</span>
-        </div>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
-          aria-expanded={mobileMenuOpen}
-          aria-controls="app-sidebar"
-          onClick={() => setMobileMenuOpen((open) => !open)}
-        >
-          <Icon name={mobileMenuOpen ? 'close' : 'menu'} />
-        </button>
+    <div className="workspace-shell">
+      <header className="workspace-topbar">
+        <NavLink to="/dashboard" className="wordmark" aria-label="AquaWise home"><span className="wordmark-symbol"><Icon name="water" size={21} /></span><span>AquaWise</span><small>WATER INTELLIGENCE</small></NavLink>
+        <button className="mobile-menu-trigger" type="button" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? 'close' : 'menu'} /></button>
+        <AnimatePresence>
+          <motion.nav className={`workspace-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Main navigation" initial={false}>
+            {links.map((link) => <NavLink key={link.path} to={link.path} end={link.path === '/dashboard' || link.path === '/recommendations'} className={({ isActive }) => `workspace-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMenuOpen(false)}><Icon name={link.icon} size={17} /><span>{link.label}</span></NavLink>)}
+          </motion.nav>
+        </AnimatePresence>
+        <div className="topbar-account"><span className="topbar-status"><i /> Workspace live</span><NavLink to="/profile" className="account-chip" aria-label="Open profile"><span className="account-avatar">{user?.name?.charAt(0).toUpperCase() || '?'}</span><span className="account-name">{user?.name || 'Account'}</span><Icon name="arrowRight" size={15} /></NavLink><button type="button" className="logout-control" onClick={handleLogout}>Sign out</button></div>
       </header>
-
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.button
-            type="button"
-            aria-label="Close navigation"
-            className="mobile-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={closeMobileMenu}
-          />
-        )}
-      </AnimatePresence>
-
-      <aside
-        id="app-sidebar"
-        className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}
-        aria-label="Main navigation"
-        aria-hidden={isMobile && !mobileMenuOpen}
-        inert={isMobile && !mobileMenuOpen}
-      >
-        <div className="sidebar-header">
-          <div className="sidebar-brand">
-            <span className="brand-mark"><Icon name="water" size={21} /></span>
-            <span className="sidebar-wordmark">AquaWise</span>
-          </div>
-          <span className="brand-caption">WATER CONSERVATION</span>
-        </div>
-
-        <nav className="sidebar-nav">
-          <span className="nav-section-label">Workspace</span>
-          {primaryLinks.map((link) => (
-            <NavLink
-              key={link.path}
-              to={link.path}
-              end={link.path === '/dashboard' || link.path === '/recommendations'}
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              onClick={closeMobileMenu}
-            >
-              <Icon name={link.icon} className="icon" />
-              <span>{link.name}</span>
-            </NavLink>
-          ))}
-          <span className="nav-section-label account-label">Account</span>
-          <NavLink
-            to="/profile"
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            onClick={closeMobileMenu}
-          >
-            <Icon name="profile" className="icon" />
-            <span>Profile</span>
-          </NavLink>
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-info">
-            <div className="avatar" aria-hidden="true">{user?.name?.charAt(0).toUpperCase() || '?'}</div>
-            <div className="user-details">
-              <span className="user-name">{user?.name || 'AquaWise user'}</span>
-              <span className="user-type">{user?.user_type || 'Account'}</span>
-            </div>
-          </div>
-          <button onClick={handleLogout} className="logout-btn nav-link" type="button">
-            <Icon name="logout" className="icon" />
-            <span>Log out</span>
-          </button>
-        </div>
-      </aside>
-
-      <main className="main-content">
-        <div className="page-content">
-          <Outlet />
-        </div>
-      </main>
+      <div className="workspace-context"><div className="context-breadcrumb"><span>Workspace</span><span className="context-slash">/</span><strong>{title}</strong></div><div className="context-note"><span className="context-dot" />{user?.user_type === 'farmer' ? 'Farm water profile' : 'Household water profile'}</div></div>
+      <main className="workspace-main"><div className="page-content"><Outlet /></div></main>
+      <nav className="mobile-tabbar" aria-label="Mobile navigation">{links.slice(0, 4).map((link) => <NavLink key={link.path} to={link.path} end={link.path === '/dashboard' || link.path === '/recommendations'} className={({ isActive }) => `mobile-tab ${isActive ? 'active' : ''}`}><Icon name={link.icon} size={19} /><span>{link.label === 'Assess water use' ? 'Assess' : link.label === 'Water assistant' ? 'Ask' : link.label}</span></NavLink>)}</nav>
     </div>
   );
-};
-
-export default AppLayout;
+}

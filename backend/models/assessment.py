@@ -19,6 +19,7 @@ class Assessment(db.Model):
     weekly_consumption = db.Column(db.Float, nullable=False)      # litres / week
     monthly_consumption = db.Column(db.Float, nullable=False)     # litres / month
     water_saver_score = db.Column(db.Integer, nullable=False)     # 0 to 100
+    calculation_details = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
 
     # Specific Usage Details (1-to-0/1)
@@ -64,6 +65,7 @@ class Assessment(db.Model):
             "monthly_consumption": round(self.monthly_consumption, 1),
             "water_saver_score": self.water_saver_score,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "calculation": self.calculation_details,
         }
 
         if include_details:

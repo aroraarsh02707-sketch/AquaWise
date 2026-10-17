@@ -154,6 +154,9 @@ def validate_household_assessment(data: dict) -> dict:
       - gardening_duration_minutes: float >= 0 and <= 240
       - other_usage_litres: float >= 0 and <= 1000 (direct litre estimate)
     """
+    if data.get("assessment_version") == 2 or data.get("extended_answers"):
+        return validate_household_assessment_v2(data)
+
     errors = {}
 
     numeric_rules = [
@@ -172,6 +175,101 @@ def validate_household_assessment(data: dict) -> dict:
     _clamp_errors(errors, data, numeric_rules)
 
     return errors
+
+
+def validate_household_assessment_v2(data: dict) -> dict:
+    """Validate versioned household answers while preserving the legacy API."""
+    errors = {}
+    answers = data.get("extended_answers")
+    if not isinstance(answers, dict):
+        return {"extended_answers": "Household answers must be provided."}
+
+    legacy_payload = {key: value for key, value in data.items() if key not in {"assessment_version", "extended_answers"}}
+    errors.update(validate_household_assessment(legacy_payload))
+    numeric = {
+        "showers_per_person_per_day": (0, 20, "Showers per person per day"),
+        "shower_duration_minutes": (0, 120, "Shower duration"),
+        "shower_flow_rate_lpm": (0.1, 40, "Shower flow rate"),
+        "bucket_baths_per_person_per_day": (0, 20, "Bucket baths per person per day"),
+        "buckets_per_bath": (0, 50, "Buckets per bath"),
+        "bucket_capacity_litres": (0.1, 100, "Bucket capacity"),
+        "toilet_flushes_per_person_per_day": (0, 60, "Toilet flushes per person per day"),
+        "toilet_flush_volume_litres": (0.1, 40, "Toilet flush volume"),
+        "bathroom_tap_minutes_per_person_per_day": (0, 300, "Bathroom tap time"),
+        "bathroom_tap_flow_rate_lpm": (0.1, 40, "Bathroom tap flow rate"),
+        "kitchen_tap_minutes_per_day": (0, 600, "Kitchen tap time"),
+        "kitchen_tap_flow_rate_lpm": (0.1, 40, "Kitchen tap flow rate"),
+        "dishwashing_tap_minutes_per_day": (0, 600, "Dishwashing tap time"),
+        "dishwashing_litres_per_day": (0, 3000, "Dishwashing volume"),
+        "dishwasher_cycles_per_week": (0, 100, "Dishwasher cycles per week"),
+        "dishwasher_litres_per_cycle": (0.1, 300, "Dishwasher volume per cycle"),
+        "laundry_loads_per_week": (0, 100, "Laundry loads per week"),
+        "laundry_litres_per_load": (0.1, 500, "Laundry volume per load"),
+        "handwash_litres_per_load": (0.1, 1000, "Handwashing volume per load"),
+        "handwash_buckets_per_load": (0.1, 100, "Buckets per laundry load"),
+        "handwash_bucket_capacity_litres": (0.1, 100, "Laundry bucket capacity"),
+        "cleaning_sessions_per_week": (0, 100, "Cleaning sessions per week"),
+        "cleaning_minutes_per_session": (0, 600, "Cleaning time per session"),
+        "cleaning_flow_rate_lpm": (0.1, 60, "Cleaning flow rate"),
+        "cleaning_litres_per_session": (0, 5000, "Cleaning volume per session"),
+        "garden_sessions_per_week": (0, 100, "Garden watering sessions per week"),
+        "garden_minutes_per_session": (0, 600, "Watering time per session"),
+        "garden_flow_rate_lpm": (0.1, 60, "Watering flow rate"),
+        "garden_litres_per_session": (0, 5000, "Watering volume per session"),
+    }
+    for name, (minimum, maximum, label) in numeric.items():
+        value = answers.get(name)
+        if value in (None, ""):
+            continue
+        try:
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")):
+                raise ValueError
+        except (TypeError, ValueError):
+            errors[f"extended_answers.{name}"] = f"{label} must be a valid number."
+            continue
+        if number < minimum or number > maximum:
+            errors[f"extended_answers.{name}"] = f"{label} must be between {minimum:g} and {maximum:g}."
+
+    enums = {
+        "bathing_method": {"shower", "bucket", "both"},
+        "toilet_type": {"standard", "dual_flush", "low_flow", "unknown"},
+        "dishwashing_method": {"running_water", "basin", "other"},
+        "laundry_method": {"front_load", "top_load", "hand_wash", "other_machine"},
+        "cleaning_method": {"bucket_mop", "hose", "equipment", "other"},
+        "garden_method": {"watering_can", "hose", "sprinkler", "drip"},
+        "leak_status": {"none", "minor", "significant", "unsure"},
+    }
+    for name, options in enums.items():
+        value = answers.get(name)
+        if value is not None and value not in options:
+            errors[f"extended_answers.{name}"] = f"Choose a valid {name.replace('_', ' ')} option."
+
+    for name in ("has_dishwasher", "has_garden", "tap_off_while_brushing", "laundry_full_loads", "kitchen_tap_runs_while_washing"):
+        if name in answers and not isinstance(answers[name], bool):
+            errors[f"extended_answers.{name}"] = "Choose yes or no."
+    if answers.get("has_dishwasher") is not True and _num_for_validation(answers.get("dishwasher_cycles_per_week")) not in (None, 0):
+        errors["extended_answers.dishwasher_cycles_per_week"] = "Dishwasher cycles require a dishwasher."
+
+    list_options = {
+        "water_sources": {"municipal", "borewell", "private_well", "tanker", "rainwater", "multiple"},
+        "conservation_measures": {"tap_aerators", "low_flow_showerhead", "dual_flush_toilet", "rainwater_harvesting", "greywater_reuse", "efficient_irrigation", "prompt_leak_repairs", "other"},
+    }
+    for name, options in list_options.items():
+        value = answers.get(name, [])
+        if not isinstance(value, list) or any(item not in options for item in value) or (name == "water_sources" and not value):
+            errors[f"extended_answers.{name}"] = "Select valid options."
+    fixture = answers.get("leak_fixture")
+    if fixture is not None and (not isinstance(fixture, str) or len(fixture) > 100):
+        errors["extended_answers.leak_fixture"] = "Fixture description must be 100 characters or fewer."
+    return errors
+
+
+def _num_for_validation(value):
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------

@@ -1,291 +1,117 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip } from 'recharts';
 import { dashboardService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
+import { PageHeading, SectionTitle, StatePanel } from '../components/PagePrimitives';
 
-const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-const shortDate = (value) => {
-  if (!value) return '';
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return value;
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day));
-};
+const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const chartColors = ['#42C7D9', '#58C4A0', '#F0BD70', '#8BE3EC', '#5B8EAC', '#B5A4E8', '#76B89F'];
+const appear = { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.25 } };
 
-const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.28, delay },
-});
-
-function TrendTooltip({ active, payload, label, metric }) {
-  if (!active || !payload?.length) return null;
-  const scoreMode = metric === 'score';
-  const value = payload[0].value;
-
-  return (
-    <div className="chart-tooltip">
-      <p className="tooltip-label">{shortDate(label)}</p>
-      <p className="tooltip-row">
-        <span className="tooltip-dot" />
-        {scoreMode ? `${value} / 100` : `${numberFormat.format(value)} L/day`}
-      </p>
-    </div>
-  );
+function Loading() {
+  return <div className="page-loading" role="status"><span className="spinner" /><span>Gathering your latest water insights…</span><div className="loading-lines"><i /><i /><i /></div></div>;
 }
 
-function LoadingDashboard() {
-  return (
-    <div className="dashboard-loading-state" role="status" aria-live="polite">
-      <span className="sr-only">Loading your water overview</span>
-      <div className="dashboard-skeleton dashboard-skeleton-heading" />
-      <div className="dashboard-skeleton dashboard-skeleton-hero" />
-      <div className="dashboard-skeleton-grid">
-        {Array.from({ length: 5 }, (_, index) => <div className="dashboard-skeleton dashboard-skeleton-metric" key={index} />)}
+function Metric({ label, value, unit, icon, note }) {
+  return <article className="metric-tile">
+    <div className="metric-label"><span className="metric-icon"><Icon name={icon} size={17} /></span>{label}</div>
+    <p className="metric-value">{value}<small>{unit}</small></p>
+    <span className="metric-note">{note}</span>
+  </article>;
+}
+
+function WaterComposition({ categories, dailyTotal }) {
+  const chartData = categories.map((item) => ({ ...item, value: Number(item.litres_per_day) || 0 }));
+  if (!chartData.length) {
+    return <section className="surface-panel overview-composition">
+      <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" />
+      <div className="overview-composition-empty"><Icon name="water" size={24} /><strong>Category details unavailable</strong><span>Your latest assessment does not contain category volumes yet.</span></div>
+    </section>;
+  }
+
+  return <section className="surface-panel overview-composition">
+    <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" aside={<span className="composition-tag"><i /> ESTIMATED USE</span>} />
+    <p className="overview-composition-intro">See how your latest estimated water use is distributed across categories.</p>
+    <div className="overview-composition-body">
+      <div className="overview-donut-wrap" role="img" aria-label="Doughnut chart of daily water use by category">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={chartData} dataKey="value" nameKey="category" innerRadius="68%" outerRadius="91%" paddingAngle={3} cornerRadius={5} stroke="#101F30" strokeWidth={3} isAnimationActive={false}>
+              {chartData.map((entry, index) => <Cell key={entry.category} fill={chartColors[index % chartColors.length]} />)}
+            </Pie>
+            <ChartTooltip formatter={(value, name, item) => { const share = Number(item?.payload?.percentage); const detail = Number.isFinite(share) ? ` · ${fmt.format(share)}%` : ''; return [`${fmt.format(Number(value))} L/day${detail}`, name]; }} contentStyle={{ background: '#08121F', border: '1px solid #315064', borderRadius: 9, color: '#E5EEF4', fontSize: 12 }} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="overview-donut-center" aria-hidden="true">
+          <span>DAILY TOTAL</span>
+          <strong>{fmt.format(dailyTotal)}<small>L</small></strong>
+          <span>latest estimate</span>
+        </div>
       </div>
-      <div className="dashboard-skeleton dashboard-skeleton-chart" />
-    </div>
-  );
-}
-
-function MetricCard({ label, value, unit, icon, detail, delay }) {
-  return (
-    <motion.article className="dashboard-metric-card" {...fadeUp(delay)}>
-      <div className="dashboard-metric-topline">
-        <span className="dashboard-metric-icon"><Icon name={icon} size={18} /></span>
-        <span className="dashboard-metric-label">{label}</span>
+      <div className="overview-composition-legend">
+        <div className="overview-legend-head"><span>USE CATEGORY</span><span>SHARE</span></div>
+        <ul>{chartData.map((item, index) => <li key={item.category}>
+          <span className="overview-legend-swatch" style={{ '--swatch': chartColors[index % chartColors.length] }} />
+          <span className="overview-legend-name">{item.category}<small>{fmt.format(item.value)} L/day</small></span>
+          <strong>{fmt.format(Number(item.percentage) || 0)}%</strong>
+        </li>)}</ul>
       </div>
-      <p className="dashboard-metric-value">
-        {value}
-        {unit && <span>{unit}</span>}
-      </p>
-      {detail && <p className="dashboard-metric-detail">{detail}</p>}
-    </motion.article>
-  );
+    </div>
+  </section>;
 }
 
-const Dashboard = () => {
+export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
-  const [trends, setTrends] = useState([]);
-  const [trendMetric, setTrendMetric] = useState('consumption');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
 
-  const fetchDashboardData = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const [dashRes, trendsRes] = await Promise.all([
-        dashboardService.getDashboard(),
-        dashboardService.getTrends(),
-      ]);
-      if (!dashRes.data.success || !trendsRes.data.success) {
-        throw new Error('Dashboard data was unavailable.');
-      }
-      setData(dashRes.data.data);
-      setTrends(trendsRes.data.data.trends || []);
-    } catch (err) {
-      console.error('Dashboard fetch error:', err);
-      setError('We couldn’t load your water overview. Check your connection and try again.');
+      const response = await dashboardService.getDashboard();
+      if (!response.data.success) throw new Error();
+      setData(response.data.data);
+      setError('');
+    } catch {
+      setError('Your water overview could not be loaded. Check your connection and retry.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
-
-  const retryDashboardData = () => {
-    setLoading(true);
-    setError(null);
-    fetchDashboardData();
-  };
-
-  if (loading) return <LoadingDashboard />;
-
-  if (error) {
-    return (
-      <section className="dashboard-state-card dashboard-error-state" role="alert">
-        <span className="dashboard-state-icon"><Icon name="water" size={23} /></span>
-        <div>
-          <h1>Your overview is temporarily unavailable</h1>
-          <p>{error}</p>
-        </div>
-        <button type="button" onClick={retryDashboardData} className="btn-primary">Try again</button>
-      </section>
-    );
-  }
+  useEffect(() => { load(); }, [load]);
+  if (loading) return <Loading />;
+  if (error) return <StatePanel tone="error" title="Your overview is unavailable" description={error} icon="warning" action={<button className="button button-primary" onClick={() => { setLoading(true); load(); }}>Retry</button>} />;
 
   const hasData = Number(data?.assessment_count) > 0;
   const firstName = user?.name?.trim().split(/\s+/)[0] || 'there';
-  const recommendations = data?.recommendations || [];
-  const latestTrend = trends[trends.length - 1];
+  const recs = data?.recommendations || [];
+  const categories = (data?.category_breakdown || [])
+    .filter((item) => Number(item.litres_per_day) > 0)
+    .sort((a, b) => Number(b.litres_per_day) - Number(a.litres_per_day));
 
-  return (
-    <motion.div className="dashboard-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.24 }}>
-      <header className="page-header dashboard-page-header">
-        <div>
-          <p className="dashboard-eyebrow">YOUR WATER AT A GLANCE</p>
-          <h1>Good to see you, {firstName}</h1>
-          <p className="subtitle">A clear view of your water use and the steps that can reduce it.</p>
-        </div>
-        <Link to="/assessment" className="btn-primary dashboard-assessment-cta">
-          <Icon name="assessment" size={18} />
-          {hasData ? 'New assessment' : 'Start assessment'}
-          <Icon name="arrowRight" size={17} />
-        </Link>
-      </header>
+  return <motion.div className="dashboard-page" {...appear}>
+    <PageHeading eyebrow="WATER USE / OVERVIEW" title={`Your water, in focus, ${firstName}.`} description="A clear snapshot of your latest estimate and practical ways to conserve." action={<Link to="/assessment" className="button button-primary"><Icon name="assessment" size={17} />{hasData ? 'New assessment' : 'Start assessment'}<Icon name="arrowRight" size={16} /></Link>} />
+    {!hasData ? <section className="welcome-feature">
+      <div className="welcome-copy"><span className="eyebrow">YOUR BASELINE STARTS HERE</span><h2>Understand where your water goes.</h2><p>AquaWise turns a few details about your household or farm into a useful water-use estimate and actions you can take next.</p><Link className="button button-primary" to="/assessment">Build your first water profile <Icon name="arrowRight" size={17} /></Link></div>
+      <div className="water-orbit" aria-hidden="true"><span className="orbit orbit-one" /><span className="orbit orbit-two" /><span className="orbit-center"><Icon name="water" size={36} /></span><b>Measure</b><b>Understand</b><b>Conserve</b></div>
+    </section> : <>
+      <WaterComposition categories={categories} dailyTotal={Number(data.latest_daily_consumption) || 0} />
 
-      {!hasData ? (
-        <motion.section className="dashboard-empty-state" {...fadeUp()}>
-          <div className="dashboard-empty-mark"><Icon name="water" size={30} /></div>
-          <p className="dashboard-eyebrow">A GOOD PLACE TO START</p>
-          <h3>Your water picture starts here</h3>
-          <p>Complete a short assessment to estimate your daily use, see where water goes, and get practical ways to save.</p>
-          <Link to="/assessment" className="btn-primary">
-            Complete your first assessment <Icon name="arrowRight" size={17} />
-          </Link>
-          <div className="dashboard-empty-notes">
-            <span><Icon name="assessment" size={16} /> Household or farm use</span>
-            <span><Icon name="recommendations" size={16} /> Personalised actions</span>
-            <span><Icon name="trend" size={16} /> Progress over time</span>
-          </div>
-        </motion.section>
-      ) : (
-        <>
-          <motion.section className="water-summary-card" {...fadeUp()} aria-label="Latest daily water use">
-            <div className="water-summary-main">
-              <div className="water-summary-heading">
-                <span className="water-summary-icon"><Icon name="water" size={22} /></span>
-                <p>Estimated daily water use</p>
-              </div>
-              <div className="water-summary-number">
-                {numberFormat.format(data.latest_daily_consumption ?? 0)}
-                <span>litres / day</span>
-              </div>
-              <p className="water-summary-note">
-                {latestTrend?.date ? `From your latest assessment on ${shortDate(latestTrend.date)}.` : 'From your latest completed assessment.'}
-              </p>
-            </div>
-            <div className="water-summary-aside">
-              <p className="water-summary-aside-label">Largest use category</p>
-              <p className="water-summary-category">{data.top_category || 'Not available'}</p>
-              <p className="water-summary-aside-copy">Your highest-volume category is a useful place to begin making changes.</p>
-            </div>
-          </motion.section>
+      <section className="metrics-row" aria-label="Water use metrics">
+        <Metric label="Weekly estimate" value={fmt.format(data.latest_weekly_consumption ?? 0)} unit="L" icon="calendar" note="At your latest usage rate" />
+        <Metric label="Monthly estimate" value={fmt.format(data.latest_monthly_consumption ?? 0)} unit="L" icon="water" note="At your latest usage rate" />
+        <Metric label="Water Saver Score" value={data.latest_water_saver_score ?? '—'} unit={data.latest_water_saver_score != null ? '/100' : ''} icon="score" note="From your latest assessment" />
+        <Metric label="Current streak" value={data.current_streak ?? 0} unit="days" icon="trend" note="Consecutive days active" />
+      </section>
 
-          <section className="dashboard-metrics-grid" aria-label="Water use and progress metrics">
-            <MetricCard label="Weekly use" value={numberFormat.format(data.latest_weekly_consumption ?? 0)} unit="L" icon="water" detail="Estimated per week" delay={0.03} />
-            <MetricCard label="Monthly use" value={numberFormat.format(data.latest_monthly_consumption ?? 0)} unit="L" icon="calendar" detail="Estimated per month" delay={0.06} />
-            <MetricCard label="Water Saver Score" value={data.latest_water_saver_score ?? '—'} unit={data.latest_water_saver_score != null ? '/100' : ''} icon="score" detail="Based on your latest assessment" delay={0.09} />
-            <MetricCard label="Current streak" value={data.current_streak ?? 0} unit="days" icon="trend" detail="Consecutive days active" delay={0.12} />
-            <MetricCard label="Assessments" value={data.assessment_count ?? 0} unit="total" icon="assessment" detail="Your completed check-ins" delay={0.15} />
-          </section>
-
-          <div className="dashboard-content-grid">
-            <motion.section className="dashboard-panel trend-panel" {...fadeUp(0.16)} aria-labelledby="trend-title">
-              <div className="dashboard-panel-header">
-                <div>
-                  <p className="dashboard-eyebrow">YOUR HISTORY</p>
-                  <h3 id="trend-title">Progress over time</h3>
-                  <p className="dashboard-panel-subtitle">Compare your recorded water use or Water Saver Score.</p>
-                </div>
-                <div className="trend-switch" role="group" aria-label="Choose trend metric">
-                  <button type="button" className={trendMetric === 'consumption' ? 'active' : ''} aria-pressed={trendMetric === 'consumption'} onClick={() => setTrendMetric('consumption')}>Water use</button>
-                  <button type="button" className={trendMetric === 'score' ? 'active' : ''} aria-pressed={trendMetric === 'score'} onClick={() => setTrendMetric('score')}>Score</button>
-                </div>
-              </div>
-              {trends.length ? (
-                <div className="dashboard-chart" role="img" aria-label={trendMetric === 'score' ? 'Water Saver Score across assessments' : 'Daily water consumption across assessments'}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={trends} margin={{ top: 12, right: 12, left: -16, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="waterTrendFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="var(--brand-teal-500)" stopOpacity={0.18} />
-                          <stop offset="100%" stopColor="var(--brand-teal-500)" stopOpacity={0.015} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid vertical={false} stroke="var(--border-light)" strokeDasharray="3 5" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tickMargin={12} minTickGap={28} tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} tickFormatter={shortDate} />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        width={55}
-                        tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
-                        tickFormatter={(value) => numberFormat.format(value)}
-                        domain={trendMetric === 'score' ? [0, 100] : ['auto', 'auto']}
-                      />
-                      <Tooltip content={<TrendTooltip metric={trendMetric} />} cursor={{ stroke: 'var(--brand-teal-400)', strokeDasharray: '4 4' }} />
-                      <Area
-                        type="monotone"
-                        dataKey={trendMetric === 'score' ? 'water_saver_score' : 'daily_consumption'}
-                        stroke="var(--brand-teal-500)"
-                        strokeWidth={2.5}
-                        fill="url(#waterTrendFill)"
-                        activeDot={{ r: 5, fill: 'var(--bg-surface)', stroke: 'var(--brand-teal-500)', strokeWidth: 2 }}
-                        dot={trends.length < 2 ? { r: 4, fill: 'var(--brand-teal-500)', strokeWidth: 0 } : false}
-                        isAnimationActive={false}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="dashboard-chart-empty">
-                  <Icon name="trend" size={22} />
-                  <p>No trend points are available yet.</p>
-                  <span>Your next assessment will appear here.</span>
-                </div>
-              )}
-              {trends.length === 1 && <p className="trend-footnote">Complete another assessment to see how your water use changes over time.</p>}
-            </motion.section>
-
-            <motion.section className="dashboard-panel recommendations-panel" {...fadeUp(0.2)} aria-labelledby="recommendations-title">
-              <div className="dashboard-panel-header recommendations-header">
-                <div>
-                  <p className="dashboard-eyebrow">PRACTICAL NEXT STEPS</p>
-                  <h3 id="recommendations-title">Recommended for you</h3>
-                </div>
-                <Link to="/recommendations" className="view-all-link">All plans <Icon name="arrowRight" size={15} /></Link>
-              </div>
-              {recommendations.length ? (
-                <div className="dashboard-recommendation-list">
-                  {recommendations.slice(0, 3).map((rec, index) => (
-                    <Link to="/recommendations" className="dashboard-recommendation" key={rec.id ?? `${rec.title}-${index}`}>
-                      <span className="dashboard-recommendation-icon"><Icon name="water" size={18} /></span>
-                      <span className="dashboard-recommendation-copy">
-                        <span className="dashboard-recommendation-category">{rec.category || 'Water saving'}</span>
-                        <strong>{rec.title}</strong>
-                        <span className="dashboard-recommendation-description">{rec.description}</span>
-                      </span>
-                      {Number(rec.potential_saving) > 0 && (
-                        <span className="dashboard-saving-value">{numberFormat.format(rec.potential_saving)}<small>L/day</small></span>
-                      )}
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="dashboard-recommendation-empty">
-                  <Icon name="recommendations" size={21} />
-                  <p>No recommendations to show yet.</p>
-                  <span>New actions will appear after your next assessment.</span>
-                </div>
-              )}
-            </motion.section>
-          </div>
-        </>
-      )}
-    </motion.div>
-  );
-};
-
-export default Dashboard;
+      <section className="surface-panel next-steps">
+        <SectionTitle eyebrow="BASED ON YOUR PROFILE" title="Recommended next steps" aside={<Link className="text-link" to="/recommendations">Assessment history <Icon name="arrowRight" size={15} /></Link>} />
+        {recs.length ? <div className="next-step-list">{recs.slice(0, 3).map((r, i) => <Link to="/recommendations" className="next-step" key={r.id ?? `${r.title}-${i}`}><span className="next-step-number">0{i + 1}</span><span className="next-step-copy"><small>{r.category || 'Water saving'}</small><strong>{r.title}</strong><span>{r.description}</span></span>{Number(r.potential_saving) > 0 && <b>{fmt.format(r.potential_saving)}<small> L/day</small></b>}</Link>)}</div> : <div className="inline-empty"><Icon name="recommendations" size={20} /><p>No recommendations to show yet. New actions appear after your next assessment.</p><Link to="/assessment">Complete an assessment</Link></div>}
+      </section>
+    </>}
+  </motion.div>;
+}
