@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 
@@ -21,6 +21,7 @@ export default function AppLayout() {
   const handleLogout = async () => { await logout(); navigate('/login'); };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="workspace-shell">
       <header className="workspace-topbar">
         <NavLink to="/dashboard" className="wordmark" aria-label="AquaWise home"><span className="wordmark-symbol"><Icon name="water" size={21} /></span><span>AquaWise</span><small>WATER INTELLIGENCE</small></NavLink>
@@ -36,5 +37,6 @@ export default function AppLayout() {
       <main className="workspace-main"><div className="page-content"><Outlet /></div></main>
       <nav className="mobile-tabbar" aria-label="Mobile navigation">{links.slice(0, 4).map((link) => <NavLink key={link.path} to={link.path} end={link.path === '/dashboard' || link.path === '/recommendations'} className={({ isActive }) => `mobile-tab ${isActive ? 'active' : ''}`}><Icon name={link.icon} size={19} /><span>{link.label === 'Assess water use' ? 'Assess' : link.label === 'Water assistant' ? 'Ask' : link.label}</span></NavLink>)}</nav>
     </div>
+    </MotionConfig>
   );
 }

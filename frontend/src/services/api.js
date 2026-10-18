@@ -3,6 +3,22 @@ import axios from 'axios';
 // The Flask backend runs on port 5000 by default during development
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Warm the configured API origin before AuthContext makes its initial session request.
+if (typeof document !== 'undefined') {
+  try {
+    const apiOrigin = new URL(API_BASE_URL, window.location.href).origin;
+    if (apiOrigin !== window.location.origin && !document.querySelector(`link[rel="preconnect"][href="${apiOrigin}"]`)) {
+      const preconnect = document.createElement('link');
+      preconnect.rel = 'preconnect';
+      preconnect.href = apiOrigin;
+      preconnect.crossOrigin = 'use-credentials';
+      document.head.appendChild(preconnect);
+    }
+  } catch {
+    // Let Axios report malformed API URL configuration through the normal request path.
+  }
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true, // Crucial for sending/receiving Flask session cookies

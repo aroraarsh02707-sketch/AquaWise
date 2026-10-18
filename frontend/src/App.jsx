@@ -1,27 +1,24 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { MotionConfig } from 'framer-motion';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import Login from './pages/Login';
 
 // Layouts & Pages
-import AppLayout from './layouts/AppLayout';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import Assessment from './pages/Assessment';
-import Recommendations from './pages/Recommendations';
-import RecommendationsIndex from './pages/RecommendationsIndex';
-import Assistant from './pages/Assistant';
-import Profile from './pages/Profile';
-
-import './index.css';
+const AppLayout = lazy(() => import('./layouts/AppLayout.jsx'));
+const Register = lazy(() => import('./pages/Register.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Assessment = lazy(() => import('./pages/Assessment.jsx'));
+const Recommendations = lazy(() => import('./pages/Recommendations.jsx'));
+const RecommendationsIndex = lazy(() => import('./pages/RecommendationsIndex.jsx'));
+const Assistant = lazy(() => import('./pages/Assistant.jsx'));
+const Profile = lazy(() => import('./pages/Profile.jsx'));
 
 function App() {
   return (
-    <MotionConfig reducedMotion="user">
-      <AuthProvider>
-        <BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Suspense fallback={<div className="loading-container" role="status" aria-live="polite"><div className="spinner" /><p>Loading AquaWise…</p></div>}>
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -41,9 +38,9 @@ function App() {
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </MotionConfig>
+        </Suspense>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

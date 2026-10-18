@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 import AuthAside from '../components/AuthAside';
@@ -34,7 +33,7 @@ function Login() {
   };
 
   return (
-    <motion.main className="auth-page auth-rebuild" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
+    <main className="auth-page auth-rebuild auth-login-enter">
       <section className="auth-form-side" aria-labelledby="login-heading">
         <Link to="/" className="auth-brand"><span className="auth-brand-mark"><Icon name="water" size={22}/></span><span>AquaWise</span><small>WATER INTELLIGENCE</small></Link>
         <div className="auth-form-shell">
@@ -46,7 +45,7 @@ function Login() {
         <span className="auth-legal">Private workspace · Your usage data stays connected to your account</span>
       </section>
       <AuthAside />
-    </motion.main>
+    </main>
   );
 }
 
