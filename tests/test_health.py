@@ -1,6 +1,8 @@
 import json
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 from app import create_app
+from backend.models import db
 
 @pytest.fixture
 def client():
@@ -18,6 +20,24 @@ def test_health_check(client):
     assert data["app"] == "AquaWise"
     assert data["environment"] == "testing"
     assert "timestamp" in data
+
+def test_health_check_returns_503_without_database(monkeypatch):
+    app = create_app("testing")
+    client = app.test_client()
+
+    with app.app_context():
+        engine = db.engine
+
+    def unavailable():
+        raise SQLAlchemyError("database credentials must not be returned")
+
+    monkeypatch.setattr(engine, "connect", unavailable)
+    response = client.get("/api/health")
+
+    assert response.status_code == 503
+    assert response.get_json()["status"] == "unhealthy"
+    assert response.get_json()["database"] == "unavailable"
+    assert "credentials" not in response.get_data(as_text=True)
 
 def test_root_describes_api_service(client):
     """The Flask service exposes an API root; the Vite app owns the UI entry."""

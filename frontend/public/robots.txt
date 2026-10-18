@@ -1,0 +1,3 @@
+# Allow crawlers to read the page's noindex metadata.
+User-agent: *
+Allow: /

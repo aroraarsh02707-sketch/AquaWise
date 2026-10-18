@@ -275,19 +275,26 @@ def create_app(config_name=None):
     @app.route("/api/health", methods=["GET"])
     def health_check():
         """Health check endpoint to verify server status and active environment."""
-        # Verify database connection
-        db_status = "connected"
+        # Render uses this response to determine whether the service is ready.
         try:
             db.session.execute(db.text("SELECT 1"))
-        except Exception as e:
-            db_status = f"unavailable: {str(e)}"
+        except Exception:
+            db.session.rollback()
+            return jsonify({
+                "status": "unhealthy",
+                "app": app.config.get("APP_NAME", "AquaWise"),
+                "version": "1.0.0",
+                "environment": config_name,
+                "database": "unavailable",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }), 503
 
         return jsonify({
             "status": "healthy",
             "app": app.config.get("APP_NAME", "AquaWise"),
             "version": "1.0.0",
             "environment": config_name,
-            "database": db_status,
+            "database": "connected",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
 
