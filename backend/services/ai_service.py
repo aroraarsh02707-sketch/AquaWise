@@ -34,6 +34,7 @@ from backend.utils.constants import (
     KITCHEN_TAP_FLOW_RATE_LPM,
     VEHICLE_WASH_HOSE_L,
     VEHICLE_WASH_BUCKET_L,
+    HOUSEHOLD_ASSESSMENT_DEFAULTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,10 +43,6 @@ logger = logging.getLogger(__name__)
 CALCULATION_DISCLAIMER = (
     "AquaWise provides estimated water consumption based on user inputs "
     "and typical usage benchmarks. Actual consumption may vary."
-)
-FARMING_DISCLAIMER = (
-    "Agricultural suggestions are general water conservation benchmarks. "
-    "Consult local agronomic extension services for crop-specific guidance."
 )
 
 
@@ -182,7 +179,6 @@ def _call_gemini_api(
 def get_fallback_recommendations(
     assessment_data: dict[str, Any],
     calculation_results: dict[str, Any],
-    user_type: str = "household",
 ) -> list[dict[str, Any]]:
     """
     Generate deterministic, rule-based recommendations.
@@ -191,7 +187,6 @@ def get_fallback_recommendations(
     Guaranteed to return structured recommendations with realistic potential savings.
     """
     recommendations: list[dict[str, Any]] = []
-    user_type_norm = (user_type or "household").lower()
 
     breakdown_map = {
         item.get("category", ""): item.get("litres_per_day", 0.0)
@@ -199,215 +194,204 @@ def get_fallback_recommendations(
     }
     daily_total = float(calculation_results.get("daily_consumption", 0.0))
 
-    if user_type_norm == "household":
-        size = max(1, int(float(assessment_data.get("household_size", 1))))
-        showers_per_day = float(assessment_data.get("showers_per_day", 0.0))
-        shower_duration = float(assessment_data.get("shower_duration_minutes", 0.0))
-        toilet_uses = float(assessment_data.get("toilet_uses_per_day", 0.0))
-        kitchen_minutes = float(assessment_data.get("kitchen_usage_minutes", 0.0))
-        laundry_loads = float(assessment_data.get("laundry_loads_per_week", 0.0))
-        vehicle_freq = float(assessment_data.get("vehicle_washing_frequency", 0.0))
-        gardening_freq = float(assessment_data.get("gardening_frequency", 0.0))
+    if assessment_data.get("assessment_version") == 2 or assessment_data.get("extended_answers"):
+        return _get_household_assessment_v2_recommendations(assessment_data, calculation_results, breakdown_map)
 
-        # 1. Shower / Bathing recommendation
-        if showers_per_day > 0 and shower_duration > 5:
-            excess_minutes = max(2.0, shower_duration - 5.0)
-            potential = round(size * showers_per_day * excess_minutes * SHOWER_FLOW_RATE_LPM * 0.7, 1)
-            bathing_share = (breakdown_map.get("Bathing", 0.0) / daily_total * 100) if daily_total > 0 else 0
-            recommendations.append({
-                "category": "Bathing",
-                "title": "Shorten Showers & Install Low-Flow Aerators",
-                "description": (
-                    f"Reducing average shower duration from {int(shower_duration)} to 5 minutes "
-                    f"and fitting aerators can save significant water for your {size}-person household."
-                ),
-                "priority": "high" if bathing_share > 30 else "medium",
-                "source": "rule_based",
-                "potential_saving": max(10.0, potential),
-            })
+    size = max(1, int(float(assessment_data.get("household_size", 1))))
+    showers_per_day = float(assessment_data.get("showers_per_day", 0.0))
+    shower_duration = float(assessment_data.get("shower_duration_minutes", 0.0))
+    toilet_uses = float(assessment_data.get("toilet_uses_per_day", 0.0))
+    kitchen_minutes = float(assessment_data.get("kitchen_usage_minutes", 0.0))
+    laundry_loads = float(assessment_data.get("laundry_loads_per_week", 0.0))
+    vehicle_freq = float(assessment_data.get("vehicle_washing_frequency", 0.0))
+    gardening_freq = float(assessment_data.get("gardening_frequency", 0.0))
 
-        # 2. Toilet flushing recommendation
-        if toilet_uses >= 3:
-            potential = round(size * toilet_uses * 2.5, 1)
-            recommendations.append({
-                "category": "Toilet",
-                "title": "Switch to Dual-Flush or Install Cistern Bags",
-                "description": (
-                    "Standard single flushes use ~6 litres per flush. Installing dual-flush mechanisms "
-                    "or water displacement bags in the cistern saves 2–3 litres on every flush."
-                ),
-                "priority": "high" if toilet_uses >= 5 else "medium",
-                "source": "rule_based",
-                "potential_saving": max(8.0, potential),
-            })
-
-        # 3. Kitchen tap recommendation
-        if kitchen_minutes >= 15:
-            potential = round(kitchen_minutes * 0.3 * KITCHEN_TAP_FLOW_RATE_LPM, 1)
-            recommendations.append({
-                "category": "Kitchen",
-                "title": "Use a Wash Basin & Avoid Running Tap While Cleaning",
-                "description": (
-                    "Washing dishes and produce in a filled basin rather than under a running tap "
-                    "reduces kitchen water consumption by up to 30%."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": max(5.0, potential),
-            })
-
-        # 4. Vehicle washing recommendation
-        if vehicle_freq > 0:
-            potential = round((VEHICLE_WASH_HOSE_L - VEHICLE_WASH_BUCKET_L) * vehicle_freq / 7.0, 1)
-            recommendations.append({
-                "category": "Vehicle Washing",
-                "title": "Use Bucket & Sponge Instead of Running Hose",
-                "description": (
-                    "A running garden hose can discharge over 150 litres per vehicle wash. "
-                    "Switching to two 15-litre buckets saves up to 120 litres per wash."
-                ),
-                "priority": "high" if vehicle_freq >= 2 else "medium",
-                "source": "rule_based",
-                "potential_saving": max(15.0, potential),
-            })
-
-        # 5. Gardening recommendation
-        if gardening_freq > 0:
-            gardening_daily = breakdown_map.get("Gardening", 20.0)
-            potential = round(gardening_daily * 0.3, 1)
-            recommendations.append({
-                "category": "Gardening",
-                "title": "Water Plants at Dawn/Dusk and Apply Mulch",
-                "description": (
-                    "Irrigate garden plants early in the morning or in the evening to minimize "
-                    "evaporative water loss. Layering organic mulch retains soil moisture longer."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": max(6.0, potential),
-            })
-
-        # 6. Laundry efficiency
-        if laundry_loads >= 4:
-            potential = round((1.0 * LAUNDRY_WATER_PER_LOAD_L) / 7.0, 1)
-            recommendations.append({
-                "category": "Laundry",
-                "title": "Consolidate Laundry into Full Loads",
-                "description": (
-                    "Running only full washing machine cycles reduces weekly wash cycles and "
-                    "saves both electricity and water."
-                ),
-                "priority": "low",
-                "source": "rule_based",
-                "potential_saving": max(8.0, potential),
-            })
-
-        # Baseline leak detection if fewer than 2 recommendations generated
-        if len(recommendations) < 2:
-            recommendations.append({
-                "category": "General",
-                "title": "Inspect Plumbing Fixtures for Silent Leaks",
-                "description": (
-                    "Check faucets, toilet flappers, and pipe joints. A single dripping tap can "
-                    "waste 20 to 50 litres of clean water every day."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": 20.0,
-            })
-
-    else:
-        # Farmer recommendations
-        irrigation_method = str(assessment_data.get("irrigation_method", "flood")).lower()
-        daily_irrigation = breakdown_map.get("Irrigation", daily_total)
-        has_rainwater = bool(assessment_data.get("rainwater_harvesting", False))
-
-        if irrigation_method == "flood":
-            potential = round(daily_irrigation * 0.45, 1)
-            recommendations.append({
-                "category": "Irrigation",
-                "title": "Transition from Flood to Drip or Micro-Irrigation",
-                "description": (
-                    "Flood irrigation loses 40% to 50% of water to deep percolation and evaporation. "
-                    "Drip irrigation delivers water directly to root zones at over 90% application efficiency."
-                ),
-                "priority": "high",
-                "source": "rule_based",
-                "potential_saving": max(50.0, potential),
-            })
-        elif irrigation_method == "sprinkler":
-            potential = round(daily_irrigation * 0.20, 1)
-            recommendations.append({
-                "category": "Irrigation",
-                "title": "Upgrade Sprinkler Nozzles & Maintain Operating Pressure",
-                "description": (
-                    "Inspect sprinkler heads for nozzle wear and maintain optimal pressure to "
-                    "prevent misting and wind drift losses."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": max(25.0, potential),
-            })
-        else:
-            potential = round(daily_irrigation * 0.10, 1)
-            recommendations.append({
-                "category": "Irrigation",
-                "title": "Maintain Drip Emitters & Flush Lateral Lines",
-                "description": (
-                    "Perform routine acid flushes and screen filter maintenance to prevent emitter "
-                    "clogging and maintain uniform field discharge."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": max(15.0, potential),
-            })
-
-        # Irrigation scheduling & timing
-        time_potential = round(daily_irrigation * 0.15, 1)
+    # 1. Shower / Bathing recommendation
+    if showers_per_day > 0 and shower_duration > 5:
+        excess_minutes = max(2.0, shower_duration - 5.0)
+        potential = round(size * showers_per_day * excess_minutes * SHOWER_FLOW_RATE_LPM * 0.7, 1)
+        bathing_share = (breakdown_map.get("Bathing", 0.0) / daily_total * 100) if daily_total > 0 else 0
         recommendations.append({
-            "category": "Irrigation",
-            "title": "Shift Irrigation to Cooler Non-Peak Evaporation Hours",
+            "category": "Bathing",
+            "title": "Shorten Showers & Install Low-Flow Aerators",
             "description": (
-                "Watering crops during early mornings (before 8 AM) or evenings reduces surface "
-                "evaporation loss by up to 20%."
+                f"Reducing average shower duration from {int(shower_duration)} to 5 minutes "
+                f"and fitting aerators can save significant water for your {size}-person household."
             ),
-            "priority": "high" if daily_irrigation > 500 else "medium",
+            "priority": "high" if bathing_share > 30 else "medium",
             "source": "rule_based",
-            "potential_saving": max(30.0, time_potential),
+            "potential_saving": max(10.0, potential),
         })
 
-        # Rainwater harvesting for farms
-        if not has_rainwater:
-            harvest_potential = round(daily_irrigation * 0.10, 1)
-            recommendations.append({
-                "category": "Conservation",
-                "title": "Construct On-Farm Rainwater Ponds or Catchment Trenches",
-                "description": (
-                    "Capturing monsoon runoff in farm ponds helps recharge the aquifer and provides "
-                    "critical protective irrigation during dry spells."
-                ),
-                "priority": "medium",
-                "source": "rule_based",
-                "potential_saving": max(20.0, harvest_potential),
-            })
-
-        # Soil mulching
-        mulch_potential = round(daily_irrigation * 0.15, 1)
+    # 2. Toilet flushing recommendation
+    if toilet_uses >= 3:
+        potential = round(size * toilet_uses * 2.5, 1)
         recommendations.append({
-            "category": "Soil Management",
-            "title": "Apply Crop Residue Mulch to Retain Root-Zone Moisture",
+            "category": "Toilet",
+            "title": "Switch to Dual-Flush or Install Cistern Bags",
             "description": (
-                "Organic mulching with crop stubble suppresses weeds, buffers soil temperature, and "
-                "drastically curtails surface moisture loss."
+                "Standard single flushes use ~6 litres per flush. Installing dual-flush mechanisms "
+                "or water displacement bags in the cistern saves 2–3 litres on every flush."
+            ),
+            "priority": "high" if toilet_uses >= 5 else "medium",
+            "source": "rule_based",
+            "potential_saving": max(8.0, potential),
+        })
+
+    # 3. Kitchen tap recommendation
+    if kitchen_minutes >= 15:
+        potential = round(kitchen_minutes * 0.3 * KITCHEN_TAP_FLOW_RATE_LPM, 1)
+        recommendations.append({
+            "category": "Kitchen",
+            "title": "Use a Wash Basin & Avoid Running Tap While Cleaning",
+            "description": (
+                "Washing dishes and produce in a filled basin rather than under a running tap "
+                "reduces kitchen water consumption by up to 30%."
             ),
             "priority": "medium",
             "source": "rule_based",
-            "potential_saving": max(25.0, mulch_potential),
+            "potential_saving": max(5.0, potential),
+        })
+
+    # 4. Vehicle washing recommendation
+    if vehicle_freq > 0:
+        potential = round((VEHICLE_WASH_HOSE_L - VEHICLE_WASH_BUCKET_L) * vehicle_freq / 7.0, 1)
+        recommendations.append({
+            "category": "Vehicle Washing",
+            "title": "Use Bucket & Sponge Instead of Running Hose",
+            "description": (
+                "A running garden hose can discharge over 150 litres per vehicle wash. "
+                "Switching to two 15-litre buckets saves up to 120 litres per wash."
+            ),
+            "priority": "high" if vehicle_freq >= 2 else "medium",
+            "source": "rule_based",
+            "potential_saving": max(15.0, potential),
+        })
+
+    # 5. Gardening recommendation
+    if gardening_freq > 0:
+        gardening_daily = breakdown_map.get("Gardening", 20.0)
+        potential = round(gardening_daily * 0.3, 1)
+        recommendations.append({
+            "category": "Gardening",
+            "title": "Water Plants at Dawn/Dusk and Apply Mulch",
+            "description": (
+                "Irrigate garden plants early in the morning or in the evening to minimize "
+                "evaporative water loss. Layering organic mulch retains soil moisture longer."
+            ),
+            "priority": "medium",
+            "source": "rule_based",
+            "potential_saving": max(6.0, potential),
+        })
+
+    # 6. Laundry efficiency
+    if laundry_loads >= 4:
+        potential = round((1.0 * LAUNDRY_WATER_PER_LOAD_L) / 7.0, 1)
+        recommendations.append({
+            "category": "Laundry",
+            "title": "Consolidate Laundry into Full Loads",
+            "description": (
+                "Running only full washing machine cycles reduces weekly wash cycles and "
+                "saves both electricity and water."
+            ),
+            "priority": "low",
+            "source": "rule_based",
+            "potential_saving": max(8.0, potential),
+        })
+
+    # Baseline leak detection if fewer than 2 recommendations generated
+    if len(recommendations) < 2:
+        recommendations.append({
+            "category": "General",
+            "title": "Inspect Plumbing Fixtures for Silent Leaks",
+            "description": (
+                "Check faucets, toilet flappers, and pipe joints. A single dripping tap can "
+                "waste 20 to 50 litres of clean water every day."
+            ),
+            "priority": "medium",
+            "source": "rule_based",
+            "potential_saving": 20.0,
         })
 
     # Sort descending by potential saving
     recommendations.sort(key=lambda r: r["potential_saving"], reverse=True)
     return recommendations
+
+
+def _get_household_assessment_v2_recommendations(assessment_data, calculation_results, breakdown_map):
+    """Return recommendations only when the submitted answers support them."""
+    answers = assessment_data.get("extended_answers") or {}
+    measures = set(answers.get("conservation_measures") or [])
+    recs = []
+
+    def add(category, title, reason, action, trigger, priority="medium", effort="low", saving=None, assumptions=None):
+        recs.append({
+            "category": category,
+            "title": title,
+            "description": f"{reason} Action: {action}",
+            "priority": priority,
+            "source": "rule_based",
+            "potential_saving": saving,
+            "evidence": {
+                "trigger": trigger,
+                "effort": effort,
+                "saving_basis": "illustrative scenario, not guaranteed" if saving is not None else None,
+                "assumptions": assumptions or [],
+            },
+        })
+
+    leak = answers.get("leak_status")
+    if leak in {"minor", "significant", "unsure"}:
+        fixture = answers.get("leak_fixture")
+        urgency = "Reported fixture: " + fixture if fixture else "Reported leak status: " + leak
+        add("Leaks", "Inspect and repair the reported leak", f"You reported {leak} leak concern" + (f" at {fixture}." if fixture else "."), "Check the fixture or arrange a plumbing inspection; no leakage volume is assumed.", urgency, "high" if leak in {"significant", "unsure"} else "medium", "moderate")
+
+    duration = _optional_float(answers.get("shower_duration_minutes"))
+    showers = _optional_float(answers.get("showers_per_person_per_day"))
+    if answers.get("bathing_method") in {"shower", "both"} and duration is not None and showers and duration >= 8:
+        size = max(1, int(float(assessment_data.get("household_size", 1))))
+        flow = _optional_float(answers.get("shower_flow_rate_lpm"))
+        assumptions = []
+        saving = None
+        if flow is None:
+            flow = HOUSEHOLD_ASSESSMENT_DEFAULTS["shower_flow_lpm"]
+            assumptions.append(f"Default flow {flow:g} L/min")
+        reduction = min(duration, HOUSEHOLD_ASSESSMENT_DEFAULTS["shower_scenario_reduction_minutes"])
+        saving = round(showers * reduction * flow * size, 1)
+        add("Bathing & showers", "Try a one-minute shorter shower", f"Your reported shower duration is {duration:g} minutes, and showers contribute to the measured estimate.", "Try reducing shower time by one minute and compare the next assessment.", "shower_duration_minutes", "medium", "low", saving, assumptions + ["Scenario assumes a one-minute duration reduction for each reported daily shower."])
+        if "low_flow_showerhead" not in measures:
+            add("Bathing & showers", "Check the shower flow rate", "The shower flow rate is a key driver of the bathing estimate.", "Measure flow with a timed container before deciding whether a lower-flow fixture is suitable.", "bathing_method and shower use", "low", "moderate")
+
+    if answers.get("tap_off_while_brushing") is False and "tap_aerators" not in measures:
+        add("Bathroom taps", "Turn off the tap while brushing", "You reported that the tap usually runs during brushing.", "Turn the tap off during brushing and shaving, then compare your next estimate.", "tap_off_while_brushing", "medium", "low")
+
+    if answers.get("toilet_type") == "standard" and "dual_flush_toilet" not in measures:
+        add("Toilet flushing", "Check whether a dual-flush upgrade fits", "You reported a standard-flush toilet.", "Confirm the fixture's actual flush volume and compatibility before considering an upgrade.", "toilet_type", "low", "moderate")
+
+    dish_method = answers.get("dishwashing_method")
+    if answers.get("has_dishwasher") is not True and (dish_method == "running_water" or answers.get("kitchen_tap_runs_while_washing") is True):
+        add("Kitchen & dishwashing", "Use a filled basin for dishwashing", "Your answers indicate that water runs while dishes are washed.", "Wash in a filled sink or basin where practical; kitchen preparation water is accounted for separately.", "dishwashing_method", "medium", "low")
+
+    laundry_loads = _optional_float(answers.get("laundry_loads_per_week"))
+    if answers.get("laundry_full_loads") is False and laundry_loads is not None and laundry_loads > 0:
+        add("Laundry", "Combine partial laundry loads", "You reported that laundry is often washed in partial loads.", "Group compatible items into a full load and use the machine's appropriate water setting.", "laundry_full_loads", "low", "low")
+
+    if answers.get("has_garden") is True and answers.get("garden_method") in {"hose", "sprinkler"}:
+        if "efficient_irrigation" not in measures:
+            add("Outdoor watering", "Review how the garden is watered", f"Your reported method is {answers.get('garden_method')}.", "Water when evaporation is lower and consider targeted watering only where it suits the plants and site.", "garden_method", "low", "low")
+
+    if not recs:
+        return []
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    recs.sort(key=lambda item: (priority_rank[item["priority"]], -(item["potential_saving"] or 0)))
+    return recs
+
+
+def _optional_float(value):
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +401,6 @@ def get_fallback_recommendations(
 def enhance_recommendations(
     assessment_data: dict[str, Any],
     calculation_results: dict[str, Any],
-    user_type: str = "household",
     api_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -430,12 +413,11 @@ def enhance_recommendations(
     - If the AI call fails or is unavailable, the deterministic base recommendations
       are returned immediately with source='rule_based'.
     """
-    base_recs = get_fallback_recommendations(assessment_data, calculation_results, user_type)
+    base_recs = get_fallback_recommendations(assessment_data, calculation_results)
     if not is_ai_available(api_key):
         return base_recs
 
     # Format structured context for the AI prompt
-    user_type_str = (user_type or "household").capitalize()
     daily_litres = calculation_results.get("daily_consumption", 0.0)
     breakdown_str = ", ".join(
         f"{b.get('category')}: {b.get('litres_per_day')} L/day ({b.get('percentage')}%)"
@@ -455,10 +437,9 @@ def enhance_recommendations(
 
     prompt = f"""
 You are the AquaWise Water Conservation Expert.
-Enhance and personalize the following water conservation recommendations for a {user_type_str} user.
+Enhance and personalize the following water conservation recommendations for a household user.
 
 User Context:
-- User Type: {user_type_str}
 - Estimated Daily Water Consumption: {daily_litres} Litres/day
 - Activity Breakdown: {breakdown_str}
 
@@ -527,12 +508,11 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
     context_prefix = ""
 
     if user_context:
-        u_type = user_context.get("user_type", "user")
         daily = user_context.get("daily_consumption")
         top_cat = user_context.get("top_category")
         if daily and top_cat:
             context_prefix = (
-                f"*(Note: In your recent {u_type} assessment, your estimated usage was "
+                f"*(Note: In your recent household assessment, your estimated usage was "
                 f"{daily} L/day with '{top_cat}' as your highest activity.)*\n\n"
             )
 
@@ -591,16 +571,6 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
             "• **Target the Roots:** Always water at soil level around the roots rather than spraying foliage overhead."
         )
 
-    # 7. Agricultural / Farm irrigation
-    if any(k in msg for k in ["irrigation", "drip", "sprinkler", "flood", "farm", "crop", "paddy", "wheat", "acre", "hectare"]):
-        return context_prefix + (
-            "**Agricultural Irrigation Guidance:**\n\n"
-            "• **Drip Irrigation Efficiency:** Drip systems deliver water directly to crop roots with 90%+ efficiency, saving 40–60% compared to flood irrigation.\n"
-            "• **Irrigation Scheduling:** Irrigate during night or early dawn to minimize wind drift and evapotranspiration.\n"
-            "• **Soil Moisture Monitoring:** Use tensiometers or simple feel tests before irrigating to avoid overwatering.\n\n"
-            f"> *{FARMING_DISCLAIMER}*"
-        )
-
     # 8. Rainwater harvesting
     if any(k in msg for k in ["rain", "rainwater", "harvest", "rooftop", "catchment", "storage"]):
         return context_prefix + (
@@ -623,7 +593,7 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
     if any(k in msg for k in ["score", "saver score", "aquawise", "how it works", "calculation", "benchmark"]):
         return context_prefix + (
             "**About AquaWise & Water Saver Score:**\n\n"
-            "• **Water Saver Score (0–100):** Benchmarks your water efficiency based on daily per-capita usage against CPHEEO urban guidelines (150 L/capita/day) and sustainable farming standards.\n"
+            "• **Water Saver Score (0–100):** The household indicator uses estimated daily use per person and reported habits; 150 L/person/day is a reference point. It is not a measured or validated assessment.\n"
             "• **Deterministic Calculations:** All consumption figures are calculated by backend math formulas, not generative AI.\n"
             "• **Track Over Time:** Take recurring assessments to increase your streak and earn conservation achievements!"
         )
@@ -633,7 +603,7 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
         return context_prefix + (
             "Hello! I am your AquaWise Water Conservation Assistant.\n\n"
             "I can help you understand your water consumption assessment, find practical ways "
-            "to reduce household or farm water usage, detect leaks, and learn about efficient irrigation. "
+            "to reduce household water use, detect leaks, and make everyday routines more efficient. "
             "What water-saving topic would you like to explore?"
         )
 
@@ -643,8 +613,8 @@ def _get_fallback_chat_response(user_message: str, user_context: dict[str, Any] 
         "Water conservation starts with small, consistent daily habits:\n"
         "• **In Bathrooms:** Keep showers short (under 5 mins) and repair dripping taps promptly.\n"
         "• **In Kitchens & Laundry:** Wash full loads and turn taps off when scrubbing dishes or produce.\n"
-        "• **Outdoors & Farms:** Water early in the morning and consider drip irrigation or soil mulching.\n\n"
-        "Ask me about specific areas like **showers, toilets, gardens, drip irrigation, or leak detection** for detailed tips!"
+        "• **Outdoors:** Water plants when evaporation is lower and focus water where it is needed.\n\n"
+        "Ask me about **showers, toilets, gardens, kitchen use, or leak detection** for practical tips!"
     )
 
 
@@ -687,7 +657,6 @@ def chat_with_assistant(
     # Build prompt with persona, user context, and conversation history
     context_lines = []
     if user_context:
-        context_lines.append(f"User Type: {user_context.get('user_type', 'household')}")
         if user_context.get("daily_consumption"):
             context_lines.append(f"Estimated Daily Usage: {user_context.get('daily_consumption')} L/day")
         if user_context.get("top_category"):
@@ -723,7 +692,6 @@ Answer the user's question with practical, accurate, and encouraging water conse
         "1. Focus on practical water-saving tips and explain consumption patterns clearly.\n"
         "2. Keep responses concise (under 200 words) using clean markdown formatting and bullet points.\n"
         "3. Never claim that estimated numbers are exact physical meter readings.\n"
-        "4. For farming/crop irrigation queries, include a reminder that local soil and climate vary.\n"
         "5. Never provide unsafe advice regarding drinking water sanitation."
     )
 

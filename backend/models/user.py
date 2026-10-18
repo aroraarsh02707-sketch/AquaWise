@@ -1,6 +1,7 @@
 """
 User Model.
-Represents application users (both Household and Farmer) with secure authentication.
+Represents application users with secure authentication. The user_type column
+is retained so existing legacy records remain readable without schema changes.
 """
 from datetime import datetime, timezone
 from flask_login import UserMixin
@@ -18,7 +19,7 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
-    user_type = db.Column(db.String(20), nullable=False, default="household")  # "household" or "farmer"
+    user_type = db.Column(db.String(20), nullable=False, default="household")
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)

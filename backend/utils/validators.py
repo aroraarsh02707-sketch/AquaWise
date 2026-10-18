@@ -10,23 +10,14 @@ Allowed enum values are kept here so they are easy to update and are not
 scattered across multiple route files.
 """
 
+import math
 import re
 
 # ---------------------------------------------------------------------------
 # Allowed enum values (single source of truth for valid option strings)
 # ---------------------------------------------------------------------------
 
-VALID_USER_TYPES = {"household", "farmer"}
-
-VALID_IRRIGATION_METHODS = {"flood", "drip", "sprinkler", "other"}
-
-VALID_WATER_SOURCES = {"groundwater", "canal", "rainwater", "tank", "other"}
-
-VALID_FARM_AREA_UNITS = {"acre", "hectare"}
-
-VALID_CROP_TYPES = {
-    "wheat", "rice", "maize", "vegetables", "pulses", "fruits", "other"
-}
+VALID_USER_TYPES = {"household"}
 
 VALID_ROLES = {"user", "assistant"}
 
@@ -57,8 +48,11 @@ def _clamp_errors(errors: dict, data: dict, rules: list) -> None:
             continue
         try:
             value = float(raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             errors[field] = f"{label} must be a number."
+            continue
+        if not math.isfinite(value):
+            errors[field] = f"{label} must be a finite number."
             continue
         if value < min_val:
             errors[field] = f"{label} must be at least {min_val}."
@@ -74,7 +68,8 @@ def validate_registration(data: dict) -> dict:
     """
     Validate user registration payload.
 
-    Expected keys: name, email, password, confirm_password, user_type.
+    Expected keys: name, email, password, confirm_password. Account type is
+    fixed to household; an explicit non-household type is rejected.
     Returns: dict of field -> error message (empty if valid).
     """
     errors = {}
@@ -105,11 +100,9 @@ def validate_registration(data: dict) -> dict:
     if not errors.get("password") and password != confirm_password:
         errors["confirm_password"] = "Passwords do not match."
 
-    user_type = (data.get("user_type") or "").strip().lower()
-    if not user_type:
-        errors["user_type"] = "User type is required."
-    elif user_type not in VALID_USER_TYPES:
-        errors["user_type"] = "User type must be 'household' or 'farmer'."
+    user_type = (data.get("user_type") or "household").strip().lower()
+    if user_type not in VALID_USER_TYPES:
+        errors["user_type"] = "Only household accounts are supported."
 
     return errors
 
@@ -154,6 +147,9 @@ def validate_household_assessment(data: dict) -> dict:
       - gardening_duration_minutes: float >= 0 and <= 240
       - other_usage_litres: float >= 0 and <= 1000 (direct litre estimate)
     """
+    if data.get("assessment_version") == 2 or data.get("extended_answers"):
+        return validate_household_assessment_v2(data)
+
     errors = {}
 
     numeric_rules = [
@@ -170,73 +166,118 @@ def validate_household_assessment(data: dict) -> dict:
         ("other_usage_litres",      0,  1000,  False, "Other water usage (litres/day)"),
     ]
     _clamp_errors(errors, data, numeric_rules)
+    household_size = data.get("household_size")
+    try:
+        if household_size not in (None, "") and math.isfinite(float(household_size)) and not float(household_size).is_integer():
+            errors["household_size"] = "Household size must be a whole number of people."
+    except (TypeError, ValueError, OverflowError):
+        pass
 
     return errors
 
 
-# ---------------------------------------------------------------------------
-# Farmer assessment validator
-# ---------------------------------------------------------------------------
-
-def validate_farmer_assessment(data: dict) -> dict:
-    """
-    Validate a farmer / agricultural assessment payload.
-
-    Rules (from TRD Section 30 and PRD Sections 8, 29):
-      - farm_area: float > 0 and <= 10,000 (acres or hectares)
-      - farm_area_unit: must be 'acre' or 'hectare'
-      - crop_type: required string, <= 100 characters
-      - irrigation_method: one of flood / drip / sprinkler / other
-      - irrigation_frequency: float >= 0 and <= 30 (sessions per week)
-      - irrigation_duration_minutes: float >= 0 and <= 1440 (max 24 h per session)
-      - water_source: one of the allowed sources
-      - estimated_irrigation_litres: float >= 0 (optional override; 0 means unknown)
-    """
+def validate_household_assessment_v2(data: dict) -> dict:
+    """Validate versioned household answers while preserving the legacy API."""
     errors = {}
+    answers = data.get("extended_answers")
+    if not isinstance(answers, dict):
+        return {"extended_answers": "Household answers must be provided."}
 
-    numeric_rules = [
-        ("farm_area",                  0.001, 10000, True,  "Farm area"),
-        ("irrigation_frequency",       0,       30,  False, "Irrigation sessions per week"),
-        ("irrigation_duration_minutes",0,     1440,  False, "Irrigation duration (minutes)"),
-        ("estimated_irrigation_litres",0,  1_000_000, False, "Estimated irrigation volume (litres)"),
-    ]
-    _clamp_errors(errors, data, numeric_rules)
+    legacy_payload = {key: value for key, value in data.items() if key not in {"assessment_version", "extended_answers"}}
+    errors.update(validate_household_assessment(legacy_payload))
+    numeric = {
+        "showers_per_person_per_day": (0, 20, "Showers per person per day"),
+        "shower_duration_minutes": (0, 120, "Shower duration"),
+        "shower_flow_rate_lpm": (0.1, 40, "Shower flow rate"),
+        "bucket_baths_per_person_per_day": (0, 20, "Bucket baths per person per day"),
+        "buckets_per_bath": (0, 50, "Buckets per bath"),
+        "bucket_capacity_litres": (0.1, 100, "Bucket capacity"),
+        "toilet_flushes_per_person_per_day": (0, 60, "Toilet flushes per person per day"),
+        "toilet_flush_volume_litres": (0.1, 40, "Toilet flush volume"),
+        "bathroom_tap_minutes_per_person_per_day": (0, 300, "Bathroom tap time"),
+        "bathroom_tap_flow_rate_lpm": (0.1, 40, "Bathroom tap flow rate"),
+        "kitchen_tap_minutes_per_day": (0, 600, "Kitchen tap time"),
+        "kitchen_tap_flow_rate_lpm": (0.1, 40, "Kitchen tap flow rate"),
+        "dishwashing_tap_minutes_per_day": (0, 600, "Dishwashing tap time"),
+        "dishwashing_litres_per_day": (0, 3000, "Dishwashing volume"),
+        "dishwasher_cycles_per_week": (0, 100, "Dishwasher cycles per week"),
+        "dishwasher_litres_per_cycle": (0.1, 300, "Dishwasher volume per cycle"),
+        "laundry_loads_per_week": (0, 100, "Laundry loads per week"),
+        "laundry_litres_per_load": (0.1, 500, "Laundry volume per load"),
+        "handwash_litres_per_load": (0.1, 1000, "Handwashing volume per load"),
+        "handwash_buckets_per_load": (0.1, 100, "Buckets per laundry load"),
+        "handwash_bucket_capacity_litres": (0.1, 100, "Laundry bucket capacity"),
+        "cleaning_sessions_per_week": (0, 100, "Cleaning sessions per week"),
+        "cleaning_minutes_per_session": (0, 600, "Cleaning time per session"),
+        "cleaning_flow_rate_lpm": (0.1, 60, "Cleaning flow rate"),
+        "cleaning_litres_per_session": (0, 5000, "Cleaning volume per session"),
+        "garden_sessions_per_week": (0, 100, "Garden watering sessions per week"),
+        "garden_minutes_per_session": (0, 600, "Watering time per session"),
+        "garden_flow_rate_lpm": (0.1, 60, "Watering flow rate"),
+        "garden_litres_per_session": (0, 5000, "Watering volume per session"),
+    }
+    for name, (minimum, maximum, label) in numeric.items():
+        value = answers.get(name)
+        if value in (None, ""):
+            continue
+        try:
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")):
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            errors[f"extended_answers.{name}"] = f"{label} must be a valid number."
+            continue
+        if number < minimum or number > maximum:
+            errors[f"extended_answers.{name}"] = f"{label} must be between {minimum:g} and {maximum:g}."
 
-    farm_area_unit = (data.get("farm_area_unit") or "acre").strip().lower()
-    if farm_area_unit not in VALID_FARM_AREA_UNITS:
-        errors["farm_area_unit"] = "Farm area unit must be 'acre' or 'hectare'."
+    enums = {
+        "bathing_method": {"shower", "bucket", "both"},
+        "toilet_type": {"standard", "dual_flush", "low_flow", "unknown"},
+        "dishwashing_method": {"running_water", "basin", "other"},
+        "laundry_method": {"front_load", "top_load", "hand_wash", "other_machine"},
+        "cleaning_method": {"bucket_mop", "hose", "equipment", "other"},
+        "garden_method": {"watering_can", "hose", "sprinkler", "drip"},
+        "leak_status": {"none", "minor", "significant", "unsure"},
+    }
+    for name, options in enums.items():
+        value = answers.get(name)
+        if value is not None and value not in options:
+            errors[f"extended_answers.{name}"] = f"Choose a valid {name.replace('_', ' ')} option."
 
-    crop_type = (data.get("crop_type") or "").strip()
-    if not crop_type:
-        errors["crop_type"] = "Crop type is required."
-    elif len(crop_type) > 100:
-        errors["crop_type"] = "Crop type must not exceed 100 characters."
+    for name in ("has_dishwasher", "has_garden", "tap_off_while_brushing", "laundry_full_loads", "kitchen_tap_runs_while_washing"):
+        if name in answers and not isinstance(answers[name], bool):
+            errors[f"extended_answers.{name}"] = "Choose yes or no."
+    if answers.get("has_dishwasher") is not True and _num_for_validation(answers.get("dishwasher_cycles_per_week")) not in (None, 0):
+        errors["extended_answers.dishwasher_cycles_per_week"] = "Dishwasher cycles require a dishwasher."
 
-    irrigation_method = (data.get("irrigation_method") or "").strip().lower()
-    if not irrigation_method:
-        errors["irrigation_method"] = "Irrigation method is required."
-    elif irrigation_method not in VALID_IRRIGATION_METHODS:
-        errors["irrigation_method"] = (
-            "Irrigation method must be one of: flood, drip, sprinkler, other."
-        )
-
-    water_source = (data.get("water_source") or "").strip().lower()
-    if water_source and water_source not in VALID_WATER_SOURCES:
-        errors["water_source"] = (
-            "Water source must be one of: groundwater, canal, rainwater, tank, other."
-        )
-
+    list_options = {
+        "water_sources": {"municipal", "borewell", "private_well", "tanker", "rainwater", "multiple"},
+        "conservation_measures": {"tap_aerators", "low_flow_showerhead", "dual_flush_toilet", "rainwater_harvesting", "greywater_reuse", "efficient_irrigation", "prompt_leak_repairs", "other"},
+    }
+    for name, options in list_options.items():
+        value = answers.get(name, [])
+        if not isinstance(value, list) or any(item not in options for item in value) or (name == "water_sources" and not value):
+            errors[f"extended_answers.{name}"] = "Select valid options."
+    fixture = answers.get("leak_fixture")
+    if fixture is not None and (not isinstance(fixture, str) or len(fixture) > 100):
+        errors["extended_answers.leak_fixture"] = "Fixture description must be 100 characters or fewer."
     return errors
 
 
+def _num_for_validation(value):
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 # ---------------------------------------------------------------------------
-# Generic assessment router
+# Household assessment router
 # ---------------------------------------------------------------------------
 
 def validate_assessment(data: dict) -> dict:
     """
-    Dispatch validation based on assessment_type in `data`.
-    Always validates assessment_type is present and valid first.
+    Validate household assessment input. Reject unsupported legacy types.
     """
     errors = {}
 
@@ -245,12 +286,6 @@ def validate_assessment(data: dict) -> dict:
         errors["assessment_type"] = "Assessment type is required."
         return errors
     if assessment_type not in VALID_USER_TYPES:
-        errors["assessment_type"] = "Assessment type must be 'household' or 'farmer'."
+        errors["assessment_type"] = "Only household assessments are supported."
         return errors
-
-    if assessment_type == "household":
-        errors.update(validate_household_assessment(data))
-    else:
-        errors.update(validate_farmer_assessment(data))
-
-    return errors
+    return validate_household_assessment(data)

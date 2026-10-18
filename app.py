@@ -1,8 +1,21 @@
 import os
+import hmac
+import secrets
 from datetime import datetime, timezone
-from flask import Flask, jsonify, render_template
+from urllib.parse import urlsplit
+from flask import Flask, jsonify, request, session
+from flask_login import LoginManager, current_user, logout_user
+from sqlalchemy import inspect
 from config import config
-from backend.models import db, Achievement
+from backend.models import db, User, Achievement
+from backend.routes.auth_routes import auth_bp
+from backend.routes.assessment_routes import assessment_bp
+from backend.routes.recommendation_routes import recommendation_bp
+from backend.routes.dashboard_routes import dashboard_bp
+from backend.routes.assistant_routes import assistant_bp
+from backend.routes.profile_routes import profile_bp
+
+login_manager = LoginManager()
 
 def seed_achievements():
     """Seed the default achievement milestones into the database."""
@@ -85,8 +98,145 @@ def create_app(config_name=None):
     selected_config = config.get(config_name, config["default"])
     app.config.from_object(selected_config)
 
+    # Environment configuration is read at app creation so factory callers and
+    # production process managers can configure the same application reliably.
+    if config_name == "production":
+        app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+    elif os.environ.get("SECRET_KEY"):
+        app.config["SECRET_KEY"] = os.environ["SECRET_KEY"]
+    configured_origins = os.environ.get("CORS_ALLOWED_ORIGINS")
+    if configured_origins and configured_origins.strip():
+        app.config["CORS_ALLOWED_ORIGINS"] = [
+            origin.strip().rstrip("/")
+            for origin in configured_origins.split(",")
+            if origin.strip()
+        ]
+    same_site_setting = os.environ.get("SESSION_COOKIE_SAMESITE")
+    if same_site_setting:
+        app.config["SESSION_COOKIE_SAMESITE"] = same_site_setting.strip().capitalize()
+        app.config["REMEMBER_COOKIE_SAMESITE"] = same_site_setting.strip().capitalize()
+
+    if config_name == "production":
+        secret_key = app.config.get("SECRET_KEY")
+        if (
+            not isinstance(secret_key, str)
+            or len(secret_key) < 32
+            or len(set(secret_key)) < 16
+            or "change-this" in secret_key.lower()
+            or "development-only" in secret_key.lower()
+            or "test-only" in secret_key.lower()
+        ):
+            raise RuntimeError("Production requires SECRET_KEY with at least 32 characters.")
+        if not app.config.get("CORS_ALLOWED_ORIGINS"):
+            raise RuntimeError("Production requires CORS_ALLOWED_ORIGINS with at least one frontend origin.")
+        for origin in app.config["CORS_ALLOWED_ORIGINS"]:
+            parsed_origin = urlsplit(origin)
+            if (
+                parsed_origin.scheme != "https"
+                or not parsed_origin.netloc
+                or parsed_origin.path
+                or parsed_origin.query
+                or parsed_origin.fragment
+            ):
+                raise RuntimeError("Production CORS_ALLOWED_ORIGINS entries must be HTTPS origins without paths.")
+        if same_site_setting is None:
+            raise RuntimeError("Production requires SESSION_COOKIE_SAMESITE (Lax for same-site, None for cross-site).")
+        if app.config["SESSION_COOKIE_SAMESITE"] not in {"Lax", "Strict", "None"}:
+            raise RuntimeError("SESSION_COOKIE_SAMESITE must be Lax, Strict, or None.")
+        if app.config["SESSION_COOKIE_SAMESITE"] == "None" and not app.config["SESSION_COOKIE_SECURE"]:
+            raise RuntimeError("SameSite=None cookies require SESSION_COOKIE_SECURE=True.")
+
+    # Keep Flask-Login's persistent remember cookie aligned with the session cookie.
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+    app.config["REMEMBER_COOKIE_SECURE"] = app.config["SESSION_COOKIE_SECURE"]
+
     # Initialize SQLAlchemy database with application
     db.init_app(app)
+
+    # Initialize Flask-Login for session-based user authentication
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return db.session.get(User, int(user_id))
+
+    @login_manager.unauthorized_handler
+    def unauthorized_callback():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "UNAUTHORIZED",
+                "message": "Authentication required. Please log in."
+            }
+        }), 401
+
+    @app.before_request
+    def restrict_api_to_household_accounts():
+        """End legacy non-household sessions without altering their records."""
+        if (
+            request.path.startswith("/api/")
+            and current_user.is_authenticated
+            and current_user.user_type != "household"
+        ):
+            logout_user()
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "ACCOUNT_TYPE_UNAVAILABLE",
+                    "message": "This legacy account type is no longer supported. Its records have been preserved."
+                }
+            }), 403
+
+    @app.before_request
+    def enforce_api_csrf_token():
+        """Require a session-bound token for every state-changing API request."""
+        if not request.path.startswith("/api/") or request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+            return None
+
+        expected_token = session.get("csrf_token")
+        supplied_token = request.headers.get("X-CSRF-Token", "")
+        if not expected_token or not supplied_token or not hmac.compare_digest(expected_token, supplied_token):
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "CSRF_TOKEN_INVALID",
+                    "message": "A valid CSRF token is required. Refresh the page and try again."
+                }
+            }), 400
+        return None
+
+    # Register Route Blueprints
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(assessment_bp)
+    app.register_blueprint(recommendation_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(assistant_bp)
+    app.register_blueprint(profile_bp)
+
+    # CORS support for React development server
+    @app.after_request
+    def set_cors_headers(response):
+        response.headers.add("Vary", "Origin")
+        origin = request.headers.get("Origin")
+        allowed_origins = app.config.get("CORS_ALLOWED_ORIGINS", [])
+        if origin and origin.rstrip("/") in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin.rstrip("/")
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        return response
+
+    @app.route("/api/auth/csrf", methods=["GET"])
+    def get_csrf_token():
+        """Create or return the token used to protect session-authenticated API calls."""
+        token = session.get("csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["csrf_token"] = token
+        response = jsonify({"success": True, "data": {"csrf_token": token}})
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     # Register custom CLI commands
     @app.cli.command("init-db")
@@ -101,6 +251,25 @@ def create_app(config_name=None):
         """Seed default achievements."""
         seed_achievements()
         print("Default achievements seeded successfully.")
+
+    @app.cli.command("migrate-household-assessment-v2")
+    def migrate_household_assessment_v2():
+        """Add nullable V2 assessment metadata columns without changing old rows."""
+        additions = {
+            "assessments": {"calculation_details": "JSON"},
+            "household_usage_details": {"extended_answers": "JSON"},
+            "recommendations": {"evidence": "JSON"},
+        }
+        inspector = inspect(db.engine)
+        with db.engine.begin() as connection:
+            for table, columns in additions.items():
+                if not inspector.has_table(table):
+                    raise RuntimeError(f"Required table {table} is missing; initialize the database first.")
+                present = {column["name"] for column in inspector.get_columns(table)}
+                for column, column_type in columns.items():
+                    if column not in present:
+                        connection.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {column_type} NULL"))
+        print("Household assessment V2 schema is ready. Existing records were preserved.")
 
     # Health Check API
     @app.route("/api/health", methods=["GET"])
@@ -122,10 +291,14 @@ def create_app(config_name=None):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
 
-    # Root route
+    # Root route: Flask serves the API; the Vite frontend owns its own index page.
     @app.route("/", methods=["GET"])
     def index():
-        return render_template("index.html")
+        return jsonify({
+            "app": app.config.get("APP_NAME", "AquaWise"),
+            "message": "AquaWise API service.",
+            "health": "/api/health",
+        })
 
     # Standard JSON error handlers for API routes
     @app.errorhandler(404)

@@ -1,6 +1,6 @@
 """
 Usage Models.
-Stores Household details, Agricultural details, and Category Breakdowns.
+Stores household details, historical assessment details, and category breakdowns.
 """
 from backend.models import db
 
@@ -25,6 +25,9 @@ class HouseholdUsageDetails(db.Model):
     gardening_frequency = db.Column(db.Float, default=0.0)
     gardening_duration_minutes = db.Column(db.Float, default=0.0)
     other_usage_litres = db.Column(db.Float, default=0.0)
+    # Optional structured answers for the expanded household assessment.
+    # Nullable so legacy assessment rows and API clients remain compatible.
+    extended_answers = db.Column(db.JSON, nullable=True)
 
     def to_dict(self):
         return {
@@ -38,10 +41,12 @@ class HouseholdUsageDetails(db.Model):
             "gardening_frequency": self.gardening_frequency,
             "gardening_duration_minutes": self.gardening_duration_minutes,
             "other_usage_litres": self.other_usage_litres,
+            "extended_answers": self.extended_answers,
         }
 
 
 class FarmerUsageDetails(db.Model):
+    """Legacy table mapping retained to preserve existing assessment rows."""
     __tablename__ = "farmer_usage_details"
 
     id = db.Column(db.Integer, primary_key=True)

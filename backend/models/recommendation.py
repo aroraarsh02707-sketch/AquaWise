@@ -24,6 +24,7 @@ class Recommendation(db.Model):
     priority = db.Column(db.String(20), default="medium", nullable=False)   # "low", "medium", "high"
     source = db.Column(db.String(20), default="rule_based", nullable=False) # "rule_based", "ai", "hybrid"
     potential_saving = db.Column(db.Float, default=0.0)                    # estimated L/day saved
+    evidence = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
 
     def to_dict(self):
@@ -34,8 +35,9 @@ class Recommendation(db.Model):
             "description": self.description,
             "priority": self.priority,
             "source": self.source,
-            "potential_saving": round(self.potential_saving, 1) if self.potential_saving else 0.0,
+            "potential_saving": round(self.potential_saving, 1) if self.potential_saving is not None else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "evidence": self.evidence,
         }
 
     def __repr__(self):

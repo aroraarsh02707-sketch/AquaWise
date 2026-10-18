@@ -19,11 +19,13 @@ def test_health_check(client):
     assert data["environment"] == "testing"
     assert "timestamp" in data
 
-def test_root_index(client):
-    """Test that the root URL loads the index template."""
+def test_root_describes_api_service(client):
+    """The Flask service exposes an API root; the Vite app owns the UI entry."""
     response = client.get("/")
     assert response.status_code == 200
-    assert b"AquaWise" in response.data
+    data = json.loads(response.data)
+    assert data["app"] == "AquaWise"
+    assert data["health"] == "/api/health"
 
 def test_404_error(client):
     """Test standard 404 JSON error response."""
