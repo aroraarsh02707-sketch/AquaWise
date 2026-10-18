@@ -16,8 +16,14 @@ class BaseConfig:
     APP_NAME = "AquaWise"
     SECRET_KEY = os.environ.get("SECRET_KEY")
 
-    # Local development origins are deliberately limited to the Vite dev server.
-    CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Local origins are explicitly limited to Vite's dev server and preview server.
+    # ProductionConfig replaces this list and still requires configured HTTPS origins.
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_SAMESITE = "Lax"

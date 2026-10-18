@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { authService } from '../services/api';
+import { getAuthErrorMessage, getSafeAuthErrorDetails } from '../utils/authError';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +16,7 @@ export const AuthProvider = ({ children }) => {
         if (response.data.success && response.data.data.user) {
           setUser(response.data.data.user);
         }
-      } catch (err) {
+      } catch {
         // Not logged in or session expired — expected, not an error
         setUser(null);
       } finally {
@@ -36,7 +37,10 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: false, error: 'Login failed.' };
     } catch (err) {
-      const msg = err.response?.data?.error?.message || 'Failed to login. Please try again.';
+      if (import.meta.env.DEV) {
+        console.error('AquaWise login request failed', getSafeAuthErrorDetails(err));
+      }
+      const msg = getAuthErrorMessage(err, 'Failed to login. Please try again.');
       return { success: false, error: msg };
     }
   };
@@ -53,7 +57,10 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: false, error: 'Registration failed.' };
     } catch (err) {
-      const msg = err.response?.data?.error?.message || 'Failed to register. Please try again.';
+      if (import.meta.env.DEV) {
+        console.error('AquaWise registration request failed', getSafeAuthErrorDetails(err));
+      }
+      const msg = getAuthErrorMessage(err, 'Failed to register. Please try again.');
       return { success: false, error: msg };
     }
   };

@@ -39,7 +39,7 @@ BUCKET_BATH_VOLUME_L = 18.0         # litres per bath
 TOILET_FLUSH_STANDARD_L = 6.0       # litres per flush
 
 # Volume for a water-efficient dual-flush toilet (full flush).
-TOILET_FLUSH_EFFICIENT_L = 3.0      # litres per flush
+TOILET_FLUSH_EFFICIENT_L = 4.8      # litres per flush
 
 # Default used when toilet type is unknown.
 TOILET_FLUSH_DEFAULT_L = 6.0        # litres per flush
@@ -52,7 +52,7 @@ TOILET_FLUSH_DEFAULT_L = 6.0        # litres per flush
 # A front-loading washing machine uses ~45–55 L; a top-loader ~80–110 L.
 # We use 60 L as a reasonable blended average for Indian homes where both
 # types are common.
-LAUNDRY_WATER_PER_LOAD_L = 60.0     # litres per load
+LAUNDRY_WATER_PER_LOAD_L = 75.0     # litres per load
 
 # ---------------------------------------------------------------------------
 # KITCHEN / DISHWASHING
@@ -91,7 +91,7 @@ VEHICLE_WASH_DEFAULT_L = 100.0      # litres per wash (default/unknown method)
 # Litres discharged per minute through a garden hose for outdoor watering.
 GARDENING_HOSE_FLOW_RATE_LPM = 15.0        # litres per minute
 GARDENING_SPRINKLER_FLOW_RATE_LPM = 12.0   # litres per minute
-GARDENING_DRIP_FLOW_RATE_LPM = 4.0         # litres per minute
+GARDENING_DRIP_FLOW_RATE_LPM = 2.0         # litres per minute
 GARDENING_BUCKET_FLOW_RATE_LPM = 8.0       # litres per minute (effective rate)
 
 # Default when method is unspecified.
@@ -119,7 +119,7 @@ HIGH_CATEGORY_SHARE_PERCENT = 30.0  # %
 # ---------------------------------------------------------------------------
 
 DAYS_IN_WEEK = 7
-DAYS_IN_MONTH = 30
+DAYS_IN_MONTH = 30.44
 
 # Version 2 household assessment defaults. Values are configurable product
 # assumptions, not universal household benchmarks. Results disclose every

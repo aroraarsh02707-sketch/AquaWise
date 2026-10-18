@@ -17,12 +17,19 @@ def app():
 
 def test_cors_allows_configured_local_origin_and_rejects_arbitrary_origin(app):
     client = app.test_client()
-    allowed = client.options("/api/auth/login", headers={"Origin": "http://localhost:5173"})
-    rejected = client.options("/api/auth/login", headers={"Origin": "https://attacker.example"})
+    allowed_origins = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    )
+    for origin in allowed_origins:
+        allowed = client.options("/api/auth/login", headers={"Origin": origin})
+        assert allowed.headers["Access-Control-Allow-Origin"] == origin
+        assert allowed.headers["Access-Control-Allow-Credentials"] == "true"
+        assert "X-CSRF-Token" in allowed.headers["Access-Control-Allow-Headers"]
 
-    assert allowed.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
-    assert allowed.headers["Access-Control-Allow-Credentials"] == "true"
-    assert "X-CSRF-Token" in allowed.headers["Access-Control-Allow-Headers"]
+    rejected = client.options("/api/auth/login", headers={"Origin": "https://attacker.example"})
     assert rejected.headers.get("Access-Control-Allow-Origin") is None
     assert "Origin" in rejected.headers.get("Vary", "")
 

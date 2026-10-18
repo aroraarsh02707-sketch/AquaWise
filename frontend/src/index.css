@@ -103,6 +103,14 @@
 .overview-composition-intro{margin:.35rem 0 .8rem;color:#8FA8B8;font-size:.69rem}
 .overview-composition-body{display:grid;grid-template-columns:minmax(260px,.88fr) minmax(0,1.12fr);align-items:center;gap:1.1rem;min-height:295px}
 .overview-donut-wrap{position:relative;width:min(100%,340px);height:300px;margin:auto;filter:drop-shadow(0 8px 22px rgba(0,0,0,.17))}
+.overview-donut-svg{display:block;width:100%;height:100%;overflow:visible}
+.overview-donut-track{stroke:#183247;stroke-width:28}
+.overview-donut-segments{opacity:1}
+.overview-donut-draw-mask-path{stroke:#fff;stroke-width:29;stroke-dasharray:597;stroke-dashoffset:597;stroke-linecap:butt;animation:overview-donut-draw 1.8s cubic-bezier(.22,.68,.25,1) .12s forwards}
+@keyframes overview-donut-draw{to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.dashboard-reveal{animation:none;opacity:1;transform:none}.overview-donut-draw-mask-path{animation:none;stroke-dashoffset:0}}
+.dashboard-reveal{animation:dashboard-reveal-in .32s ease-out both;animation-delay:var(--reveal-delay,0ms)}
+@keyframes dashboard-reveal-in{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
 .overview-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
 .overview-donut-center>span:first-child{color:#7893A6;font-size:.52rem;font-weight:700;letter-spacing:.14em}
 .overview-donut-center>strong{margin:.08rem 0;color:#E5EEF4;font:600 clamp(1.65rem,3vw,2.25rem)/1.2 var(--font-heading);letter-spacing:-.06em}

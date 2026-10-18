@@ -1,17 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip } from 'recharts';
 import { dashboardService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 import { PageHeading, SectionTitle, StatePanel } from '../components/PagePrimitives';
 import { getScorePresentation } from '../assessmentTransparency';
+import { createDonutSegments } from '../dashboardChart';
 
 const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const chartColors = ['#42C7D9', '#58C4A0', '#F0BD70', '#8BE3EC', '#5B8EAC', '#B5A4E8', '#76B89F'];
-const appear = { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.25 } };
-const MotionLink = motion(Link);
 
 function Loading() {
   return <div className="page-loading" role="status"><span className="spinner" /><span>Gathering your latest water insights…</span><div className="loading-lines"><i /><i /><i /></div></div>;
@@ -20,7 +17,7 @@ function Loading() {
 function Metric({ variant, label, value, unit, icon, note, index, scoreInfo, assessmentId }) {
   const numericScore = variant === 'score' && Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : 0;
   const circumference = 2 * Math.PI * 24;
-  return <motion.article className={`metric-tile metric-tile--${variant}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, delay: 0.12 + index * 0.075, ease: 'easeOut' }}>
+  return <article className={`metric-tile metric-tile--${variant} dashboard-reveal`} style={{ '--reveal-delay': `${120 + index * 75}ms` }}>
     <div className="metric-label"><span className="metric-icon"><Icon name={icon} size={18} /></span><span>{label}</span></div>
     <div className="metric-main">
       <p className="metric-value">{value}<small>{unit}</small></p>
@@ -37,7 +34,7 @@ function Metric({ variant, label, value, unit, icon, note, index, scoreInfo, ass
       {scoreInfo.qualification && <span className="score-qualification">{scoreInfo.qualification}</span>}
       {assessmentId && <Link className="score-review-link" to={`/recommendations/${assessmentId}`}>Review assessment details <Icon name="arrowRight" size={13} /></Link>}
     </> : <span className="metric-note">{note}</span>}
-  </motion.article>;
+  </article>;
 }
 
 function recommendationIcon(category = '') {
@@ -55,35 +52,44 @@ function RecommendationCard({ recommendation, index }) {
   const normalizedPriority = String(priority || '').toLowerCase();
   const hasPriority = ['high', 'medium', 'low'].includes(normalizedPriority);
   const label = hasPriority ? `${normalizedPriority} priority` : 'Suggested';
-  return <MotionLink to="/recommendations" className={`next-step${index === 0 ? ' next-step--lead' : ''}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.48 + index * 0.07, ease: 'easeOut' }}>
+  return <Link to="/recommendations" className={`next-step dashboard-reveal${index === 0 ? ' next-step--lead' : ''}`} style={{ '--reveal-delay': `${480 + index * 70}ms` }}>
     <span className="next-step-icon"><Icon name={recommendationIcon(category)} size={20} /></span>
     <span className="next-step-copy"><span className="next-step-meta"><small>{category || 'Water saving'}</small><i className={`priority-badge priority-badge--${hasPriority ? normalizedPriority : 'neutral'}`}>{label}</i></span><strong>{title}</strong><span>{description}</span></span>
     <span className="next-step-action">{Number(potentialSaving) > 0 && <b>{fmt.format(potentialSaving)}<small> L/day</small></b>}<span>View action <Icon name="arrowRight" size={15} /></span></span>
-  </MotionLink>;
+  </Link>;
 }
 
 function WaterComposition({ categories, dailyTotal }) {
-  const chartData = categories.map((item) => ({ ...item, value: Number(item.litres_per_day) || 0 }));
+  const chartData = createDonutSegments(categories, chartColors);
   if (!chartData.length) {
-    return <motion.section className="surface-panel overview-composition" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.42, ease: 'easeOut' }}>
+    return <section className="surface-panel overview-composition dashboard-reveal">
       <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" />
       <div className="overview-composition-empty"><Icon name="water" size={24} /><strong>Category details unavailable</strong><span>Your latest assessment does not contain category volumes yet.</span></div>
-    </motion.section>;
+    </section>;
   }
 
-  return <motion.section className="surface-panel overview-composition" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.42, ease: 'easeOut' }}>
+  return <section className="surface-panel overview-composition dashboard-reveal">
     <SectionTitle eyebrow="LATEST ASSESSMENT" title="Your daily water profile" aside={<span className="composition-tag"><i /> ESTIMATED USE</span>} />
     <p className="overview-composition-intro">See how your latest estimated water use is distributed across categories.</p>
     <div className="overview-composition-body">
       <div className="overview-donut-wrap" role="img" aria-label="Doughnut chart of daily water use by category">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={chartData} dataKey="value" nameKey="category" innerRadius="68%" outerRadius="91%" paddingAngle={3} cornerRadius={5} stroke="#101F30" strokeWidth={3} isAnimationActive animationBegin={120} animationDuration={950} animationEasing="ease-out">
-              {chartData.map((entry, index) => <Cell key={entry.category} fill={chartColors[index % chartColors.length]} />)}
-            </Pie>
-            <ChartTooltip formatter={(value, name, item) => { const share = Number(item?.payload?.percentage); const detail = Number.isFinite(share) ? ` · ${fmt.format(share)}%` : ''; return [`${fmt.format(Number(value))} L/day${detail}`, name]; }} contentStyle={{ background: '#08121F', border: '1px solid #315064', borderRadius: 9, color: '#E5EEF4', fontSize: 12 }} />
-          </PieChart>
-        </ResponsiveContainer>
+        <svg className="overview-donut-svg" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+          <defs>
+            <mask id="overview-donut-draw-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="240" height="240">
+              <circle className="overview-donut-draw-mask-path" cx="120" cy="120" r="95" fill="none" />
+            </mask>
+          </defs>
+          <circle className="overview-donut-track" cx="120" cy="120" r="95" fill="none" />
+          <g className="overview-donut-segments" mask="url(#overview-donut-draw-mask)">
+            {chartData.map((entry) => {
+              const share = Number(entry.percentage);
+              const shareLabel = Number.isFinite(share) ? ` · ${fmt.format(share)}%` : '';
+              return <path key={entry.category} d={entry.path} fill={entry.color} stroke="#101F30" strokeWidth="3">
+                <title>{`${entry.category}: ${fmt.format(entry.value)} L/day${shareLabel}`}</title>
+              </path>;
+            })}
+          </g>
+        </svg>
         <div className="overview-donut-center" aria-hidden="true">
           <span>DAILY TOTAL</span>
           <strong>{fmt.format(dailyTotal)}<small>L</small></strong>
@@ -92,14 +98,14 @@ function WaterComposition({ categories, dailyTotal }) {
       </div>
       <div className="overview-composition-legend">
         <div className="overview-legend-head"><span>USE CATEGORY</span><span>SHARE</span></div>
-        <ul>{chartData.map((item, index) => <li key={item.category}>
-          <span className="overview-legend-swatch" style={{ '--swatch': chartColors[index % chartColors.length] }} />
+        <ul>{chartData.map((item) => <li key={item.category}>
+          <span className="overview-legend-swatch" style={{ '--swatch': item.color }} />
           <span className="overview-legend-name">{item.category}<small>{fmt.format(item.value)} L/day</small></span>
           <strong>{fmt.format(Number(item.percentage) || 0)}%</strong>
         </li>)}</ul>
       </div>
     </div>
-  </motion.section>;
+  </section>;
 }
 
 export default function Dashboard() {
@@ -132,7 +138,7 @@ export default function Dashboard() {
     .filter((item) => Number(item.litres_per_day) > 0)
     .sort((a, b) => Number(b.litres_per_day) - Number(a.litres_per_day));
 
-  return <motion.div className="dashboard-page" {...appear}>
+  return <div className="dashboard-page dashboard-reveal">
     <PageHeading eyebrow="WATER USE / OVERVIEW" title={`Your water, in focus, ${firstName}.`} description="A clear snapshot of your latest estimate and practical ways to conserve." action={<Link to="/assessment" className="button button-primary"><Icon name="assessment" size={17} />{hasData ? 'New assessment' : 'Start assessment'}<Icon name="arrowRight" size={16} /></Link>} />
     {!hasData ? <section className="welcome-feature">
       <div className="welcome-copy"><span className="eyebrow">YOUR BASELINE STARTS HERE</span><h2>Understand where your water goes.</h2><p>AquaWise turns a few details about your household into a useful water-use estimate and actions you can take next.</p><Link className="button button-primary" to="/assessment">Build your first water profile <Icon name="arrowRight" size={17} /></Link></div>
@@ -152,5 +158,5 @@ export default function Dashboard() {
         {recs.length ? <div className="next-step-list">{recs.slice(0, 3).map((r, i) => <RecommendationCard recommendation={r} index={i} key={r.id ?? `${r.title}-${i}`} />)}</div> : <div className="inline-empty"><Icon name="recommendations" size={20} /><p>No recommendations to show yet. New actions appear after your next assessment.</p><Link to="/assessment">Complete an assessment</Link></div>}
       </section>
     </>}
-  </motion.div>;
+  </div>;
 }
