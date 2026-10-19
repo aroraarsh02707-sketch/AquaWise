@@ -3,9 +3,10 @@ import hmac
 import secrets
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
-from flask import Flask, jsonify, request, session
+from flask import Flask, abort, jsonify, request, send_from_directory, session
 from flask_login import LoginManager, current_user, logout_user
 from sqlalchemy import inspect
+from werkzeug.utils import safe_join
 from config import config
 from backend.models import db, User, Achievement
 from backend.routes.auth_routes import auth_bp
@@ -83,6 +84,7 @@ def create_app(config_name=None):
     base_dir = os.path.abspath(os.path.dirname(__file__))
     template_dir = os.path.join(base_dir, "frontend", "templates")
     static_dir = os.path.join(base_dir, "frontend", "static")
+    frontend_dist = os.path.join(base_dir, "frontend", "dist")
     database_dir = os.path.join(base_dir, "database")
 
     # Ensure database directory exists
@@ -97,6 +99,8 @@ def create_app(config_name=None):
     # Load configuration
     selected_config = config.get(config_name, config["default"])
     app.config.from_object(selected_config)
+    app.config["FRONTEND_DIST"] = frontend_dist
+    app.config["SERVE_FRONTEND"] = config_name == "production"
 
     # Environment configuration is read at app creation so factory callers and
     # production process managers can configure the same application reliably.
@@ -127,8 +131,6 @@ def create_app(config_name=None):
             or "test-only" in secret_key.lower()
         ):
             raise RuntimeError("Production requires SECRET_KEY with at least 32 characters.")
-        if not app.config.get("CORS_ALLOWED_ORIGINS"):
-            raise RuntimeError("Production requires CORS_ALLOWED_ORIGINS with at least one frontend origin.")
         for origin in app.config["CORS_ALLOWED_ORIGINS"]:
             parsed_origin = urlsplit(origin)
             if (
@@ -298,14 +300,57 @@ def create_app(config_name=None):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }), 200
 
-    # Root route: Flask serves the API; the Vite frontend owns its own index page.
+    # In production, Flask serves Vite's built SPA on the same origin as its API.
+    # Development and testing keep the API-only root unless explicitly enabled.
     @app.route("/", methods=["GET"])
     def index():
+        if app.config.get("SERVE_FRONTEND"):
+            index_path = os.path.join(app.config["FRONTEND_DIST"], "index.html")
+            if not os.path.isfile(index_path):
+                return jsonify({
+                    "success": False,
+                    "error": {
+                        "code": "FRONTEND_BUILD_MISSING",
+                        "message": "The frontend build is unavailable.",
+                    },
+                }), 503
+            return send_from_directory(app.config["FRONTEND_DIST"], "index.html")
+
         return jsonify({
             "app": app.config.get("APP_NAME", "AquaWise"),
             "message": "AquaWise API service.",
             "health": "/api/health",
         })
+
+    @app.route("/assets/<path:filename>", methods=["GET"])
+    def frontend_asset(filename):
+        if not app.config.get("SERVE_FRONTEND"):
+            abort(404)
+        return send_from_directory(
+            os.path.join(app.config["FRONTEND_DIST"], "assets"),
+            filename,
+        )
+
+    @app.route("/<path:path>", methods=["GET"])
+    def frontend_route(path):
+        # Do not allow the SPA fallback to turn unknown API URLs into HTML.
+        if path == "api" or path.startswith("api/"):
+            abort(404)
+        if not app.config.get("SERVE_FRONTEND"):
+            abort(404)
+
+        dist_dir = app.config["FRONTEND_DIST"]
+        safe_file_path = safe_join(dist_dir, path)
+        if safe_file_path and os.path.isfile(safe_file_path):
+            return send_from_directory(dist_dir, path)
+
+        # A missing asset should remain a 404; client-side routes receive index.html.
+        if os.path.splitext(path)[1]:
+            abort(404)
+        index_path = os.path.join(dist_dir, "index.html")
+        if not os.path.isfile(index_path):
+            abort(404)
+        return send_from_directory(dist_dir, "index.html")
 
     # Standard JSON error handlers for API routes
     @app.errorhandler(404)

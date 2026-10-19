@@ -1,8 +1,10 @@
 # AquaWise first deployment: Render + Supabase
 
-This guide deploys the React/Vite frontend to a Render Static Site, the Flask API to a Render Web Service, and a **new, empty** PostgreSQL database to Supabase Free. It does not copy accounts or assessment history from `database/aquawise.db`.
+This guide documents AquaWise's original separate Render Static Site and Flask Web Service setup, plus the same-origin combined service used to avoid cross-origin session cookies. The combined service can use the existing Supabase PostgreSQL database; it does not copy, reset, or migrate local SQLite data.
 
 Do not put passwords, database URLs, API keys, or Flask secrets in Git, `render.yaml`, or any `VITE_` variable. Enter secret values only in the relevant Render environment settings or in the hidden PowerShell prompts below.
+
+For the mobile login fix and a safe same-origin cutover, follow **Same-origin deployment for mobile login** first. The numbered sections below document the original split Static Site + API setup and remain for reference; they are not the target configuration for the combined service.
 
 ## Free-plan behavior to expect
 
@@ -10,6 +12,32 @@ Do not put passwords, database URLs, API keys, or Flask secrets in Git, `render.
 - Supabase Free can pause a project after a week of low database activity. You may need to restore it before the app can use it again. [Supabase pausing policy](https://supabase.com/docs/guides/platform/free-project-pausing)
 
 These free plans are suitable for a first demo, but they do not provide production-grade uptime or backups.
+
+## Same-origin deployment for mobile login
+
+The repository's `render.yaml` keeps the existing Static Site and adds a second Web Service named `aquawise-combined`. This lets you test a single-origin version on its own Render URL before moving a custom domain. The combined service serves the Vite build and `/api/*` from the same HTTPS origin. The frontend then uses relative `/api` requests in production; the local Vite development default remains `http://localhost:5000/api`.
+
+### Render build and start commands
+
+The combined service in `render.yaml` uses these exact commands:
+
+```text
+Build: pip install -r requirements.txt && cd frontend && npm ci && npm run build
+Start: gunicorn --bind 0.0.0.0:$PORT "app:create_app('production')"
+Health check: /api/health
+```
+
+The frontend build must finish before Gunicorn starts so `frontend/dist/index.html` and its assets are present. The start command intentionally does not run `init-db` or a migration: the existing Supabase database already holds your real data, and this deployment only changes how the frontend is served.
+
+### Create and test the combined service without switching the public site
+
+1. Commit and push this change to the branch Render uses. In Render, update the existing Blueprint so it adds `aquawise-combined`; do not delete or replace the current Static Site or API Web Service. Alternatively create a Web Service manually from the same repository and use the commands above.
+2. Configure the new service with the existing `FLASK_ENV=production`, the same current `SECRET_KEY`, and the same current Supabase `DATABASE_URL`. Do not rotate or paste these values into Git. Set `SESSION_COOKIE_SAMESITE=Lax` for same-site requests. Keep `AI_API_KEY`/`GEMINI_API_KEY` and `AI_MODEL` aligned with the existing backend if the assistant is in use. `CORS_ALLOWED_ORIGINS` is optional for this combined service; same-origin browser requests do not require CORS. The backend still only emits credentialed CORS headers for explicitly configured origins.
+3. Leave the existing services and public custom-domain assignment untouched. Open the new combined service's generated `https://<service>.onrender.com` URL. Check `/api/health`, `/login`, and refresh `/dashboard`, `/assessment`, `/assistant`, and `/profile` directly. In browser developer tools, confirm API calls go to that same host under `/api`, the CSRF request returns a token, and the session cookie is accepted.
+4. Sign in using an existing account and verify dashboard/profile reads. This uses the live database but should not change household records. Assessment submissions, assistant messages, and profile updates do write to the live database; avoid those during the smoke test unless you intend to keep the resulting records/changes. For write-flow testing without affecting live data, point only the new service at a separately prepared staging database with the same schema.
+5. Once checks pass, move your custom domain from the old Static Site to `aquawise-combined` in Render. Keep the old Static Site and API service available for rollback; if the combined service has a problem, reassign the domain to the old Static Site. Do not change DNS unless Render instructs you to for the domain transfer.
+
+No schema migration is required for this frontend-serving change. Do not run `init-db` or `migrate-household-assessment-v2` as part of the cutover; the new service connects to the same existing tables and records.
 
 ## 1. Create an empty Supabase database
 

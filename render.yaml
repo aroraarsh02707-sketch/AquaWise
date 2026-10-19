@@ -11,3 +11,19 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false
+  - type: web
+    runtime: python
+    name: aquawise-combined
+    plan: free
+    buildCommand: pip install -r requirements.txt && cd frontend && npm ci && npm run build
+    startCommand: gunicorn --bind 0.0.0.0:$PORT "app:create_app('production')"
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_COOKIE_SAMESITE
+        value: Lax

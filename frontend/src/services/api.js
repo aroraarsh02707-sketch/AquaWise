@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// The Flask backend runs on port 5000 by default during development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Local Vite development keeps the Flask API on port 5000. Production serves
+// the app and API from Flask, so relative requests keep session cookies same-origin.
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
 
 // Warm the configured API origin before AuthContext makes its initial session request.
 if (typeof document !== 'undefined') {

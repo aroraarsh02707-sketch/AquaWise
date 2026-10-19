@@ -58,9 +58,9 @@ def test_csrf_token_is_required_and_accepted_for_registration(app):
     assert "HttpOnly" in accepted.headers["Set-Cookie"]
 
 
-def test_production_startup_rejects_missing_or_placeholder_configuration(monkeypatch):
+def test_production_startup_rejects_missing_or_placeholder_secret(monkeypatch):
     monkeypatch.delenv("SECRET_KEY", raising=False)
-    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
     monkeypatch.setenv("SESSION_COOKIE_SAMESITE", "Lax")
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         create_app("production")
@@ -75,8 +75,8 @@ def test_production_startup_rejects_missing_or_placeholder_configuration(monkeyp
 
     monkeypatch.setenv("SECRET_KEY", "K8pR4mN2vQ7xA5cD9eF3hJ6kL1sW0yB4")
     monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
-    with pytest.raises(RuntimeError, match="CORS_ALLOWED_ORIGINS"):
-        create_app("production")
+    app = create_app("production")
+    assert app.config["CORS_ALLOWED_ORIGINS"] == []
 
 
 def test_production_cookie_settings_for_cross_site_topology(monkeypatch):
